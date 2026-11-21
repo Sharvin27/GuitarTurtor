@@ -25,9 +25,14 @@ Audio files are not in the repo (see `audio/README.md`).
 ```bash
 npm install          # only needed for the self-check
 npm run serve        # then open http://localhost:8080
-npm run selfcheck    # fingertip-to-target error at every note onset
+npm run selfcheck    # fingertip-to-target error and finger posture at every note onset
+npm run stamp        # run before committing js/ changes: content-hashes script URLs (see below)
 ```
-Self-check result (mm): Choo Lo mean 0.10 / max 0.48; Rabba mean 0.34 / max 3.09.
+Self-check result (mm): Choo Lo mean 0.10 / max 0.49; Rabba mean 0.51 / max 3.09.
+
+**Deploying:** GitHub Pages serves every file with a 10-minute cache, so without help a browser can keep running old scripts after a push. `npm run stamp` writes a content hash into every local script URL (through the import map in `index.html`, the `<script src>` tags and the inline import in `create.html`) and adds `modulepreload` links, so browsers download all modules in parallel and fetch exactly the files that changed. Run it after editing anything in `js/`, then commit the updated HTML with the change.
+
+**Rendering:** the 3D view renders while playing and for a moment after any input, seek or load; when paused and untouched it stops drawing, so an idle tab costs almost no GPU. The hands appear at once with the original mesh and are smoothed (Loop subdivision) right after the first frame.
 
 ## Docs
 - `RESEARCH.md` — hand models, fingering algorithms, joint biomechanics, related projects (with links).

@@ -55,13 +55,13 @@ export class HandRig {
     this.root.name = side + 'HandRoot';
     this.root.add(gltfScene);
     this.bones = {};
+    this.skinned = [];
     gltfScene.traverse(o => {
       if (o.isBone || (o.parent && o.parent.name === 'Armature' && !o.isMesh)) this.bones[o.name] = o;
       if (o.isSkinnedMesh || o.isMesh) {
         o.frustumCulled = false;
         o.castShadow = true;
-        // 2 levels of Loop subdivision: 1360 -> ~21k vertices, smooth knuckles and fingertips
-        if (o.isSkinnedMesh) o.geometry = subdivideSkinned(o.geometry, 2);
+        if (o.isSkinnedMesh) this.skinned.push(o);   // smoothed later by refine(), off the first frame
         o.material = skinMaterial();
         applyTexture(o.material, 'skin.jpg', { repeat: [3, 3], tint: 0xffeee6 });
       }
@@ -112,6 +112,18 @@ export class HandRig {
     this.arm.name = side + 'Forearm';
     this.invPlace = new THREE.Matrix4();
     this.place = new THREE.Matrix4();
+  }
+
+  /**
+   * Smooth the hand mesh: 2 levels of Loop subdivision (1360 -> ~19k vertices). It takes ~180 ms per hand,
+   * so the page shows the low-poly hand first and calls this once rendering has started. Skinning, the rig
+   * and the nails don't change; only the geometry is swapped. Returns true if anything was refined.
+   */
+  refine(levels = 2) {
+    if (this.refined) return false;
+    for (const m of this.skinned) { const old = m.geometry; m.geometry = subdivideSkinned(old, levels); old.dispose(); }
+    this.refined = true;
+    return true;
   }
 
   /**

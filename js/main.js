@@ -99,10 +99,23 @@ const yt = window.YTSync ? new window.YTSync({
   },
 }) : null;
 
-function setStatus(s) { ui.status.textContent = s; }
+function setStatus(s) { ui.status.textContent = s; poke(); }
+
+// ---------- render on demand ----------
+// While paused and untouched nothing on screen changes, so the scene and the tab strip are only redrawn
+// while playing, and for a short settling window (camera damping, hand springs, follow-cam) after anything
+// that can change the picture: input, camera moves, seeks, song loads and late-arriving textures.
+let wake = 120;
+function poke(frames = 60) { wake = Math.max(wake, frames); }
+for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'input', 'change', 'click', 'touchstart'])
+  window.addEventListener(type, () => poke(), { passive: true, capture: true });
+document.addEventListener('visibilitychange', () => poke());
+{ const m = THREE.DefaultLoadingManager, prev = m.onLoad; m.onLoad = (...a) => { poke(); if (prev) prev(...a); }; m.onProgress = () => poke(); }
+const setText = (el, s) => { if (el.textContent !== s) el.textContent = s; };
 let sourceReady = false, pendingPlay = false;
 function setUi(p) {
   playing = p;
+  poke();
   ui.play.textContent = sourceReady ? (p ? 'Pause' : 'Play') : (p ? 'Starting…' : 'Loading…');
   ui.play.setAttribute('aria-pressed', String(p));
 }
@@ -113,7 +126,7 @@ function setPlaying(p) {
   if (audioOK) { if (p) audio.play().catch(() => { audioOK = false; }); else audio.pause(); }
 }
 function now() { return ytActive ? yt.time() : audioOK ? audio.currentTime : internalT; }
-function seek(t) { if (ytActive) yt.seek(t); else if (audioOK) audio.currentTime = t; internalT = t; lastT = null; }
+function seek(t) { if (ytActive) yt.seek(t); else if (audioOK) audio.currentTime = t; internalT = t; lastT = null; poke(); }
 
 async function loadSong(key) {
   const song = SONGS[key];
@@ -188,6 +201,11 @@ Promise.all([loadHand('left'), loadHand('right')]).then(([l, r]) => {
   if (events.length) perf.setEvents(events);
   lastT = null;
   ui.loading.hidden = true;
+  poke();
+  // smooth the hands once the first frames are on screen (~180 ms each, one hand per task so the page
+  // stays responsive); until then the original low-poly mesh is shown
+  const idle = cb => (window.requestIdleCallback ? requestIdleCallback(cb, { timeout: 600 }) : setTimeout(cb, 120));
+  requestAnimationFrame(() => idle(() => { left.refine(); poke(); idle(() => { right.refine(); poke(); }); }));
 }).catch(err => { ui.loading.textContent = 'Hand model failed to load'; console.error(err); });
 
 // ---------- per-frame ----------
@@ -240,8 +258,8 @@ function update(dt) {
   if (cur) {
     const desc = cur.notes.map(n => `${STRING_NAMES[n.s]}${n.f} ${n.finger ? FINGER_NAMES[n.finger - 1] : 'open'}${n.pluck ? ' (' + PLUCK_LABEL[n.pluck] + ')' : ''}`).join(' + ');
     const tech = [cur.legato && cur.legato + ' in', cur.slide && 'slide', cur.bend && 'bend', cur.hb && 'hold bend', cur.rel && 'release', cur.vib && 'vibrato', cur.ham && 'hammer next', cur.pull && 'pull next'].filter(Boolean).join(', ');
-    ui.info.textContent = `Pos ${cur.pos}  |  ${desc}${tech ? '  · ' + tech : ''}`;
-  } else ui.info.textContent = 'Press Play';
+    setText(ui.info, `Pos ${cur.pos}  |  ${desc}${tech ? '  · ' + tech : ''}`);
+  } else setText(ui.info, 'Press Play');
 
   // camera follows the fretting hand (keeps the user's orbit offset)
   if (ui.follow.checked) {
@@ -254,8 +272,8 @@ function update(dt) {
     camera.position.add(d);
   } else followTarget = null;
 
-  if (!ui.scrub.matches(':active')) ui.scrub.value = T;
-  ui.time.textContent = `${fmt(T)} / ${fmt(duration)}`;
+  if (!ui.scrub.matches(':active') && ui.scrub.value !== String(T)) ui.scrub.value = T;
+  setText(ui.time, `${fmt(T)} / ${fmt(duration)}`);
 }
 const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
@@ -266,6 +284,7 @@ function resize() {
   camera.aspect = w / Math.max(1, h);
   camera.fov = camera.aspect < 0.8 ? 55 : 38;
   camera.updateProjectionMatrix();
+  poke();
 }
 window.addEventListener('resize', resize);
 
@@ -273,12 +292,16 @@ let prevFrame = performance.now();
 function frame(t) {
   const dt = Math.min(0.1, Math.max(0, (t - prevFrame) / 1000));
   prevFrame = t;
-  update(dt);
-  learn.update(now());
-  controls.update();
-  renderer.render(scene, camera);
+  if (playing || wake > 0) {
+    if (!playing) wake--;
+    update(dt);
+    learn.update(now());
+    controls.update();   // dispatches 'change' while damping, which pokes and keeps this going until it settles
+    renderer.render(scene, camera);
+  }
   requestAnimationFrame(frame);
 }
+controls.addEventListener('change', () => poke());
 
 // ---------- UI ----------
 ui.song.addEventListener('change', () => loadSong(ui.song.value));

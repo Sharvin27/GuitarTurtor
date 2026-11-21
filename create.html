@@ -53,6 +53,7 @@
   code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
   input[type=file] { padding: 8px; }
 </style>
+<link rel="modulepreload" href="js/songmaker.js?v=18265b2df7">
 </head>
 <body>
 <main>
@@ -117,10 +118,10 @@
   <p class="note">Have Python? The local helper <code>python songforge/server.py</code> still exists: type a song name and it finds and downloads the YouTube audio for you.</p>
   <p class="note">Transcription: <a href="https://github.com/DanieleMorotti/guitab" style="color:inherit">guitab</a> by Daniele Morotti (code MIT, model CC BY-NC-SA 4.0, non-commercial) and <a href="https://github.com/spotify/basic-pitch" style="color:inherit">basic-pitch</a> by Spotify (Apache-2.0).</p>
 </main>
-<script src="js/yt.js"></script>
-<script src="js/user-songs.js"></script>
+<script src="js/yt.js?v=e16a684b74"></script>
+<script src="js/user-songs.js?v=7112627e30"></script>
 <script type="module">
-import { decodeAudio, transcribe, toScore } from './js/songmaker.js';
+import { decodeAudio, transcribe, toScore } from './js/songmaker.js?v=18265b2df7';
 const $ = id => document.getElementById(id);
 let yt = null, videoId = '', audioBlob = null, audioLabel = '', last = null, rec = null;
 

@@ -12,8 +12,8 @@ const D2R = Math.PI / 180;
 // fingers (PIP ~89 deg); raising the knuckles gives MCP ~33, PIP ~62 and a more upright fingertip.
 export const LEFT = {
   alpha: 16 * D2R,                    // finger direction tilt out of the fingerboard plane
-  ky: 0.048,                          // knuckle height above the fingerboard
-  kz: focus => 0.035 - 0.006 * focus, // knuckle distance beyond the treble edge, by string focus
+  ky: 0.044,                          // knuckle height above the fingerboard (refit with WRIST on)
+  kz: focus => 0.040 - 0.006 * focus, // knuckle distance beyond the treble edge, by string focus
   // wrist: the palm frame turns about the knuckle line instead of staying rigid. Ranges come from MediaPipe
   // hand poses on a realistic reference clip (frets 12-22, see PLAN.md "Wrist data"): palm-direction yaw
   // median +2 deg (p10..p90 -8..+5), roll about the finger axis median -2 deg (p10..p90 -10..+9).
