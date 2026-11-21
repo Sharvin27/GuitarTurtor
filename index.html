@@ -7,6 +7,7 @@
 <link rel="icon" href="data:,">
 <style>
   :root {
+    --ytpanel-bottom: 150px;
     --bg: #14161b; --panel: rgba(24, 27, 34, 0.88); --text: #e9ecf1; --muted: #9aa3b2;
     --accent: #ffb347; --border: rgba(255, 255, 255, 0.12); --btn: #2a2f3a; --btn-hover: #353b48;
   }
@@ -79,6 +80,7 @@
   <label class="file" title="Play your own copy of the recording in sync (stays on your computer)">Load recording<input type="file" id="loadfile" accept="audio/*" hidden></label>
   <button id="view-front">Front</button><button id="view-player">Player</button><button id="view-close">Close</button><button id="view-pick">Picking hand</button><button id="view-back">Back</button>
 </div>
+<script src="js/yt.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

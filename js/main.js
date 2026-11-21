@@ -10,8 +10,8 @@ import { HAND_LEFT, HAND_RIGHT } from './hand-assets.js';
 import { renderSong } from './synth.js';
 
 const SONGS = {
-  'choo-lo': { label: 'Choo Lo (acoustic, fingerpicked)', data: 'data/score-choo-lo.json', audio: 'audio/choo-lo.mp3', mode: 'fingers' },
-  'rabba': { label: 'Rabba Mein Toh Mar Gya (electric, pick)', data: 'data/score-rabba.json', audio: 'audio/rabba.mp3', mode: 'pick' },
+  'choo-lo': { label: 'Choo Lo (acoustic, fingerpicked)', data: 'data/score-choo-lo.json', audio: 'audio/choo-lo.mp3', video: 'D1I84oQuGpM', mode: 'fingers' },
+  'rabba': { label: 'Rabba Mein Toh Mar Gya (electric, pick)', data: 'data/score-rabba.json', audio: 'audio/rabba.mp3', video: '3efgaqeI9qk', mode: 'pick' },
 };
 const FINGER_COLORS = [0x4cc9f0, 0x80ed99, 0xffd166, 0xef476f];
 const FINGER_NAMES = ['index', 'middle', 'ring', 'pinky'];
@@ -89,15 +89,30 @@ audio.addEventListener('error', () => { if (audio.src) { audioOK = false; setSta
 audio.addEventListener('loadedmetadata', () => { duration = Math.max(duration, audio.duration || 0); ui.scrub.max = duration; });
 audio.addEventListener('ended', () => setPlaying(false));
 
+// the original Short in a small floating player (only where js/yt.js is loaded, i.e. the GitHub Pages build)
+let ytActive = false;
+const yt = window.YTSync ? new window.YTSync({
+  onState: s => {
+    if (!ytActive) return;
+    if (s === 1 && !playing) setUi(true);
+    else if (s === 2 && playing) setUi(false);
+    else if (s === 0) setUi(false);
+  },
+}) : null;
+
 function setStatus(s) { ui.status.textContent = s; }
-function setPlaying(p) {
+function setUi(p) {
   playing = p;
   ui.play.textContent = p ? 'Pause' : 'Play';
   ui.play.setAttribute('aria-pressed', String(p));
+}
+function setPlaying(p) {
+  setUi(p);
+  if (ytActive) { if (p) yt.play(yt.time(), parseFloat(ui.rate.value)); else yt.pause(); return; }
   if (audioOK) { if (p) audio.play().catch(() => { audioOK = false; }); else audio.pause(); }
 }
-function now() { return audioOK ? audio.currentTime : internalT; }
-function seek(t) { if (audioOK) audio.currentTime = t; internalT = t; lastT = null; }
+function now() { return ytActive ? yt.time() : audioOK ? audio.currentTime : internalT; }
+function seek(t) { if (ytActive) yt.seek(t); else if (audioOK) audio.currentTime = t; internalT = t; lastT = null; }
 
 async function loadSong(key) {
   const song = SONGS[key];
@@ -113,9 +128,22 @@ async function loadSong(key) {
   ui.scrub.max = duration;
   const shifts = events.reduce((a, e, i) => a + (i && e.pos !== events[i - 1].pos ? 1 : 0), 0);
   const summary = `${events.length} notes · ${shifts} position shifts · ${Math.round(score.bpm)} bpm · ${song.mode === 'pick' ? 'pick' : 'p-i-m-a'}`;
-  // 1) the original recording, if it's next to the page; 2) otherwise the tab rendered by the guitar synth
+  // 1) the original recording, if it's next to the page; 2) the original YouTube Short; 3) the tab rendered by the guitar synth
   let src = null, source = 'recording';
+  ytActive = false;
   try { const r = await fetch(song.audio, { method: 'HEAD' }); if (r.ok) src = song.audio; } catch (e) { /* not hosted */ }
+  if (!src && yt && song.video) {
+    setStatus('Loading the original video…');
+    try {
+      await yt.load(song.video, song.label);
+      if (songKey !== key) return;
+      audio.pause(); audioOK = false; ytActive = true;
+      yt.setRate(parseFloat(ui.rate.value)); seek(0);
+      setStatus(`${summary} · sound: original video (YouTube)`);
+      return;
+    } catch (e) { console.warn(e); }
+  }
+  if (yt && !ytActive) yt.hide();
   if (!src) {
     setStatus('Generating guitar sound from the tab…');
     try {
@@ -245,11 +273,12 @@ for (const [k, s] of Object.entries(SONGS)) ui.song.add(new Option(s.label, k));
 ui.song.addEventListener('change', () => loadSong(ui.song.value));
 ui.play.addEventListener('click', () => setPlaying(!playing));
 ui.scrub.addEventListener('input', () => seek(parseFloat(ui.scrub.value)));
-ui.rate.addEventListener('change', () => { audio.playbackRate = parseFloat(ui.rate.value); });
+ui.rate.addEventListener('change', () => { audio.playbackRate = parseFloat(ui.rate.value); if (ytActive) yt.setRate(parseFloat(ui.rate.value)); });
 $('loadfile').addEventListener('change', e => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
   setPlaying(false);
+  if (ytActive) { yt.pause(); yt.hide(); ytActive = false; }
   setAudio(URL.createObjectURL(f), 'file');
   e.target.value = '';
 });
