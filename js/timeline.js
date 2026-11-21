@@ -94,6 +94,7 @@ export function sample(events, T) {
   const next = events[i + 1];
   const evH = events[Math.max(0, iH)];
   out.pos = evH.pos;
+  out.evH = evH;
   // during a slide the hand travels with the finger
   const slideStart = e => e.t + 0.35 * Math.min(e.dur, (events[events.indexOf(e) + 1]?.t ?? e.t + e.dur) - e.t);
   if (ev && ev.slide && next && T > slideStart(ev)) out.pos = next.pos;

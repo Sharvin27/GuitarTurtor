@@ -8,6 +8,7 @@ import { HandRig } from './hand.js';
 import { Performer } from './performer.js';
 import { HAND_LEFT, HAND_RIGHT } from './hand-assets.js';
 import { renderSong } from './synth.js';
+import { initChords } from './chords-mode.js';   // Chords practice mode: progression, strum pattern, diagrams (js/chords-mode.js)
 import { initLearn } from './learn.js';   // tab strip, lesson markers, hands toggle, lesson cam (js/learn.js)
 
 let SONGS = {};   // filled from data/songs.json (written by the tab-viewer build)
@@ -78,6 +79,11 @@ pickMesh.visible = false;
 guitar.add(pickMesh);
 const learn = initLearn({ guitar, camera, controls, now: () => now(), seek: t => seek(t), hands: () => [left, right], pickMesh, markers, resize: () => resize() });
 
+const chords = initChords({
+  now: () => now(), seek: t => seek(t), isPlaying: () => playing, setPlaying: p => setPlaying(p),
+  load: cs => loadChordSong(cs), restore: () => loadSong(songKey), resize: () => resize(),
+});
+
 // ---------- state ----------
 let events = [], duration = 1, songKey = 'choo-lo';
 let lastT = null, internalT = 0, playing = false, audioOK = true;
@@ -115,7 +121,29 @@ function setPlaying(p) {
 function now() { return ytActive ? yt.time() : audioOK ? audio.currentTime : internalT; }
 function seek(t) { if (ytActive) yt.seek(t); else if (audioOK) audio.currentTime = t; internalT = t; lastT = null; }
 
+// Chords practice mode: events/strokes/audio come from js/chordsong.js + synth.renderStrokes (via js/chords-mode.js)
+let chordLoad = 0;
+async function loadChordSong(cs) {
+  const my = ++chordLoad, wasPlaying = playing;
+  setPlaying(false);
+  ytActive = false; if (yt) { yt.pause(); yt.hide(); }
+  sourceReady = false; pendingPlay = false; setUi(false);
+  events = cs.events; duration = cs.total;
+  if (perf) perf.setEvents(events);
+  learn.setEvents(events);
+  ui.scrub.max = duration;
+  setStatus('Generating guitar sound for ' + cs.label + '…');
+  let src = null;
+  try { src = URL.createObjectURL(await cs.renderAudio()); } catch (e) { console.error(e); }
+  if (my !== chordLoad) return;
+  setAudio(src, 'synth', cs.label);
+  duration = cs.total; ui.scrub.max = duration;
+  sourceIsReady();
+  if (wasPlaying) setPlaying(true);
+}
+
 async function loadSong(key) {
+  chordLoad++; chords.deactivate();
   const song = SONGS[key];
   songKey = key;
   ui.song.value = key;
@@ -204,7 +232,8 @@ function update(dt) {
 
   // strings: pressed geometry from the actual fingertips, glow + vibration while sounding
   const glow = [0, 0, 0, 0, 0, 0];
-  for (const e of st.sounding) for (const n of e.notes) glow[n.s] = Math.max(glow[n.s], Math.exp(-(T - e.t) / 0.45));
+  if (events.strum) events.strum.glow(T).forEach((v, s) => { glow[s] = v; });   // chord mode: each string lights when the hand reaches it
+  else for (const e of st.sounding) for (const n of e.notes) glow[n.s] = Math.max(glow[n.s], Math.exp(-(T - e.t) / 0.45));
   strings.forEach((str, s) => {
     str.mat.emissiveIntensity = 2.0 * glow[s];
     layoutString(str, pressed[s], glow[s] * 0.0005, T);
@@ -275,6 +304,7 @@ function frame(t) {
   prevFrame = t;
   update(dt);
   learn.update(now());
+  chords.update(now());
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -326,13 +356,14 @@ camera.position.copy(start).add(camOffset);
     for (const x of list) ui.song.add(new Option(x.label, x.id));
     const want = location.hash.slice(1);
     await loadSong(SONGS[want] ? want : (SONGS['choo-lo'] ? 'choo-lo' : list[0].id));
+    if (want === 'chords') chords.activate();
   } catch (e) { setStatus('Failed to load the song list: ' + e.message); console.error(e); }
 })();
-window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (SONGS[k] && k !== songKey) loadSong(k); });
+window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (SONGS[k] && k !== songKey) loadSong(k); else if (k === 'chords') chords.activate(); });
 requestAnimationFrame(frame);
 
 // exposed for debugging / headless checks
 window.__g3d = {
   get events() { return events; }, get hand() { return left; }, get right() { return right; }, get perf() { return perf; },
-  get song() { return songKey; }, loadSong, setView, seek, setPlaying, camera, controls,
+  get song() { return songKey; }, chords, loadSong, setView, seek, setPlaying, camera, controls,
 };
