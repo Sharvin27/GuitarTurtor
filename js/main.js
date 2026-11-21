@@ -7,6 +7,7 @@ import { prepareTimeline } from './timeline.js';
 import { HandRig } from './hand.js';
 import { Performer } from './performer.js';
 import { HAND_LEFT, HAND_RIGHT } from './hand-assets.js';
+import { renderSong } from './synth.js';
 
 const SONGS = {
   'choo-lo': { label: 'Choo Lo (acoustic, fingerpicked)', data: 'data/score-choo-lo.json', audio: 'audio/choo-lo.mp3', mode: 'fingers' },
@@ -102,6 +103,7 @@ async function loadSong(key) {
   const song = SONGS[key];
   songKey = key;
   ui.song.value = key;
+  const tl = document.getElementById('tabslink'); if (tl) tl.href = tl.href.split('#')[0] + '#' + key;
   setPlaying(false);
   setStatus('Loading ' + song.label + '…');
   const score = await (await fetch(song.data)).json();
@@ -109,18 +111,31 @@ async function loadSong(key) {
   if (perf) perf.setEvents(events);
   duration = events.length ? events[events.length - 1].t + 2 : 1;
   ui.scrub.max = duration;
-  audioOK = true;
-  // play the file directly; if the host refuses it, retry from a Blob URL, else run on the internal clock
-  if (audio.src.startsWith('blob:')) URL.revokeObjectURL(audio.src);
-  audio.onerror = async () => {
-    audio.onerror = () => { audioOK = false; setStatus('Audio unavailable here, animation runs silently'); };
-    try { const r = await fetch(song.audio); if (!r.ok) throw new Error(r.status); audio.src = URL.createObjectURL(await r.blob()); } catch (e) { audioOK = false; setStatus("No audio file found, animation runs on its own clock"); }
-  };
-  audio.src = song.audio;
-  audio.playbackRate = parseFloat(ui.rate.value);
-  seek(0);
   const shifts = events.reduce((a, e, i) => a + (i && e.pos !== events[i - 1].pos ? 1 : 0), 0);
-  setStatus(`${events.length} notes · ${shifts} position shifts · ${Math.round(score.bpm)} bpm · ${song.mode === 'pick' ? 'pick' : 'p-i-m-a'}`);
+  const summary = `${events.length} notes · ${shifts} position shifts · ${Math.round(score.bpm)} bpm · ${song.mode === 'pick' ? 'pick' : 'p-i-m-a'}`;
+  // 1) the original recording, if it's next to the page; 2) otherwise the tab rendered by the guitar synth
+  let src = null, source = 'recording';
+  try { const r = await fetch(song.audio, { method: 'HEAD' }); if (r.ok) src = song.audio; } catch (e) { /* not hosted */ }
+  if (!src) {
+    setStatus('Generating guitar sound from the tab…');
+    try {
+      const blob = await renderSong(normalizeScore(score), song.mode, duration + 1.5);
+      if (songKey !== key) return;
+      src = URL.createObjectURL(blob); source = 'synth';
+    } catch (e) { console.error(e); }
+  }
+  setAudio(src, source, summary);
+}
+
+let lastSummary = '';
+function setAudio(src, source, summary = lastSummary) {
+  lastSummary = summary;
+  if (audio.src.startsWith('blob:')) URL.revokeObjectURL(audio.src);
+  audioOK = !!src;
+  if (src) { audio.src = src; audio.playbackRate = parseFloat(ui.rate.value); }
+  seek(0);
+  const label = { recording: 'original recording', synth: 'synth guitar from the tab', file: 'your recording' }[source] || 'no audio';
+  setStatus(`${summary} · sound: ${src ? label : 'no audio'}`);
 }
 
 // ---------- hands ----------
@@ -231,6 +246,13 @@ ui.song.addEventListener('change', () => loadSong(ui.song.value));
 ui.play.addEventListener('click', () => setPlaying(!playing));
 ui.scrub.addEventListener('input', () => seek(parseFloat(ui.scrub.value)));
 ui.rate.addEventListener('change', () => { audio.playbackRate = parseFloat(ui.rate.value); });
+$('loadfile').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  setPlaying(false);
+  setAudio(URL.createObjectURL(f), 'file');
+  e.target.value = '';
+});
 window.addEventListener('keydown', e => {
   if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); setPlaying(!playing); }
 });

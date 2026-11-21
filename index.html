@@ -36,6 +36,11 @@
   #scrub { flex: 1 1 160px; accent-color: var(--accent); min-width: 120px; }
   #time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 84px; text-align: right; }
   label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+  label.file { color: var(--text); background: var(--btn); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; min-height: 36px; cursor: pointer; }
+  label.file:hover { background: var(--btn-hover); }
+  .linkbtn { color: var(--text); background: var(--btn); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; min-height: 36px; display: inline-flex; align-items: center; text-decoration: none; }
+  .linkbtn:hover { background: var(--btn-hover); }
+  label.file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
   .legend { display: inline-flex; gap: 10px; font-size: 12px; color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--muted); }
@@ -58,6 +63,7 @@
 <div class="bar" id="top">
   <h1>Guitar Hand 3D</h1>
   <select id="song" aria-label="Song"></select>
+  <a id="tabslink" class="linkbtn" href="tabs.html">Tab view</a>
   <span id="status"></span>
   <span class="legend"><span><i style="background:#4cc9f0"></i>index</span><span><i style="background:#80ed99"></i>middle</span><span><i style="background:#ffd166"></i>ring</span><span><i style="background:#ef476f"></i>pinky</span><span><i style="background:#fff"></i>open</span></span>
 </div>
@@ -70,6 +76,7 @@
     <option value="1">1×</option><option value="0.75">0.75×</option><option value="0.5">0.5×</option>
   </select>
   <label><input type="checkbox" id="follow" checked> follow hand</label>
+  <label class="file" title="Play your own copy of the recording in sync (stays on your computer)">Load recording<input type="file" id="loadfile" accept="audio/*" hidden></label>
   <button id="view-front">Front</button><button id="view-player">Player</button><button id="view-close">Close</button><button id="view-pick">Picking hand</button><button id="view-back">Back</button>
 </div>
 <script type="module" src="js/main.js"></script>
