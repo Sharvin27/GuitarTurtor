@@ -101,12 +101,14 @@ const yt = window.YTSync ? new window.YTSync({
 }) : null;
 
 function setStatus(s) { ui.status.textContent = s; }
+let sourceReady = false, pendingPlay = false;
 function setUi(p) {
   playing = p;
-  ui.play.textContent = p ? 'Pause' : 'Play';
+  ui.play.textContent = sourceReady ? (p ? 'Pause' : 'Play') : (p ? 'Starting…' : 'Loading…');
   ui.play.setAttribute('aria-pressed', String(p));
 }
 function setPlaying(p) {
+  if (!sourceReady) { pendingPlay = p; setUi(p); return; }   // pressed while the sound is still loading: start once it's ready
   setUi(p);
   if (ytActive) { if (p) yt.play(yt.time(), parseFloat(ui.rate.value)); else yt.pause(); return; }
   if (audioOK) { if (p) audio.play().catch(() => { audioOK = false; }); else audio.pause(); }
@@ -120,6 +122,7 @@ async function loadSong(key) {
   ui.song.value = key;
   const tl = document.getElementById('tabslink'); if (tl) tl.href = tl.href.split('#')[0] + '#' + key;
   setPlaying(false);
+  sourceReady = false; pendingPlay = false; setUi(false);
   setStatus('Loading ' + song.label + '…');
   const score = await (await fetch(song.data)).json();
   events = prepareTimeline(solveFingering(normalizeScore(score)), song.mode);
@@ -140,6 +143,7 @@ async function loadSong(key) {
       audio.pause(); audioOK = false; ytActive = true;
       yt.setRate(parseFloat(ui.rate.value)); seek(0);
       setStatus(`${summary} · sound: original video (YouTube)`);
+      sourceIsReady();
       return;
     } catch (e) { console.warn(e); }
   }
@@ -153,6 +157,13 @@ async function loadSong(key) {
     } catch (e) { console.error(e); }
   }
   setAudio(src, source, summary);
+  sourceIsReady();
+}
+function sourceIsReady() {
+  sourceReady = true;
+  const go = pendingPlay; pendingPlay = false;
+  setUi(false);
+  if (go) setPlaying(true);
 }
 
 let lastSummary = '';
