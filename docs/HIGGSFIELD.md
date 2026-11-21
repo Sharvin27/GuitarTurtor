@@ -19,7 +19,8 @@ For lessons, use the **3D animation as the reference**, because it plays the exa
 1. **Record the 3D view** at https://sharvin27.github.io/GuitarTurtor/ with a screen recorder.
    - Choose a fixed camera view that shows the fingertips on the strings. **Close** (side-on to the fretboard) shows them most clearly; **Player** (looking down at the neck, as you see your own hands) feels natural but can hide fingertips behind the neck, so check it before using it.
    - For technique-heavy bars, record them again at **0.5×** so every move is easy to follow.
-   - Keep **follow hand** on and crop off the control bars.
+   - Turn **follow hand OFF** and frame the section's frets once, so the camera never moves (pilot finding: a panning camera makes the model redraw the neck every frame, and the fret dots come out wrong). Crop off the control bars.
+   - Record at **24 fps** and trim the reference to the exact section length, so the output doesn't need stretching to match the tab.
    - Record one section per clip. Motion transfer accepts 4–30 s references, and clips of about 10 s keep the fingers more accurate.
 2. **Make a source image** of real hands from the same camera angle (Prompt 1).
 3. In Higgsfield, go to **Video → Kling Motion Control**.
@@ -28,6 +29,13 @@ For lessons, use the **3D animation as the reference**, because it plays the exa
    - Set motion/reference strength to maximum and output to 1080p.
 4. **Check every clip against the tab** (`tabs.html`). If a finger lands on the wrong fret or string, regenerate it or use a shorter reference clip.
 5. **Edit:** add the tab, finger and fret labels, section titles and the audio in a video editor. AI video can't reliably draw text or numbers.
+
+## Pilot results (Rabba hook, bars 7–11, 720p)
+- ✅ Real hands, five fingers, both hands in frame; the fretting hand followed the tab's positions, including the move up to the fret 22 bend.
+- ⚠️ **Fret dots drawn wrong** (the 12th-fret double dot moved around, sometimes twice). Students can't read fret numbers off the guitar, so the **string / fret / finger labels and the tab band are required**, not optional.
+- ⚠️ Finger-on-string detail can't be confirmed at 720p: make a **0.5× take** for checking fingers.
+- ⚠️ Output came back 7.04 s at 24 fps for a 6.8 s section and was compressed to fit: record the reference at 24 fps and the exact length (see Workflow).
+- 💡 Next take: follow hand off, camera fixed on frets 12–22, 720p first (about 49 credits); 1080p only after a take passes the checklist.
 
 ## Prompt 1: source image
 ### Choo Lo (acoustic, fingerpicked)
@@ -57,7 +65,7 @@ Keep both hands fully in frame and every fingertip visible on the fretboard: no 
 
 ## Negative prompt
 ```
-extra fingers, missing fingers, fused fingers, six fingers, warped or melting hands, motion blur, fingers hidden behind the neck, hand cut off by frame, fingertips out of focus, dark shadows on hands, finger on wrong fret, skipped notes, extra notes, wrong number of strings, frets merging, bent neck, blurry fretboard, camera shake, zoom, cuts, scene change, text, captions, numbers, logos, watermark, cartoon, 3D render look, plastic skin, face, original video
+extra fingers, missing fingers, fused fingers, six fingers, extra fret markers, duplicated inlays, moving or redrawn fretboard, warped or melting hands, motion blur, fingers hidden behind the neck, hand cut off by frame, fingertips out of focus, dark shadows on hands, finger on wrong fret, skipped notes, extra notes, wrong number of strings, frets merging, bent neck, blurry fretboard, camera shake, zoom, cuts, scene change, text, captions, numbers, logos, watermark, cartoon, 3D render look, plastic skin, face, original video
 ```
 
 ## Learning variants
@@ -84,6 +92,7 @@ extra fingers, missing fingers, fused fingers, six fingers, warped or melting ha
 ## Checklist for each clip
 - [ ] The reference is the 3D recording, not the original Short.
 - [ ] Same camera angle for the whole clip; no zoom or cuts.
+- [ ] Fret dots are in the right places (3, 5, 7, 9, double at 12, 15, 17, 19, 21) and don't move; if not, rely on the labels and say so in the clip.
 - [ ] Five fingers per hand, six strings, frets straight.
 - [ ] Every fretted note matches the tab: string, fret and timing.
 - [ ] The right finger plays each note (it matches the 3D hand's finger colours: index blue, middle green, ring yellow, pinky red).
