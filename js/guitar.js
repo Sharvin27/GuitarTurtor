@@ -23,6 +23,24 @@ export const stringY = x => FRET_H + 0.0005 + 0.003 * x / SCALE;
 export const contactX = f => f <= 0 ? -0.006 : fretX(f) - 0.3 * (fretX(f) - fretX(f - 1));
 export const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
 
+// Wood and skin textures (generated with Higgsfield, see assets/textures/README.md). They only change
+// the look: geometry, fret spacing and string positions stay exactly as computed. A texture is applied
+// once it has loaded, so a missing file leaves the flat colour in place.
+const texLoader = new THREE.TextureLoader();
+export function applyTexture(mat, file, { repeat = [1, 1], rotation = 0, tint = 0xffffff } = {}) {
+  texLoader.load(new URL('../assets/textures/' + file, import.meta.url).href, t => {
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeat[0], repeat[1]);
+    t.center.set(0.5, 0.5);
+    t.rotation = rotation;
+    t.anisotropy = 8;
+    mat.map = t;
+    mat.color.set(tint);
+    mat.needsUpdate = true;
+  }, undefined, () => { /* keep the flat colour */ });
+}
+
 export function buildGuitar() {
   const g = new THREE.Group();
   g.name = 'guitar';
@@ -33,6 +51,13 @@ export function buildGuitar() {
   const metal = new THREE.MeshStandardMaterial({ color: 0xd9d9d9, metalness: 0.9, roughness: 0.25 });
   const pearl = new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.3, emissive: 0x222222 });
   const bone = new THREE.MeshStandardMaterial({ color: 0xeee8d5, roughness: 0.4 });
+  // fingerboard + bridge: rosewood, grain along the neck (box top face: u = x)
+  applyTexture(wood, 'rosewood.jpg');
+  // neck back + headstock: mahogany; the cylinder's v runs along the neck, so turn the grain 90 degrees
+  applyTexture(neckMat, 'mahogany-neck.jpg', { rotation: Math.PI / 2 });
+  // body: extrude UVs are in metres. Top caps: spruce, grain along the body (x); sides: mahogany
+  applyTexture(top, 'spruce.jpg', { repeat: [2, 2], rotation: Math.PI / 2 });
+  applyTexture(side, 'mahogany.jpg', { repeat: [3, 3] });
 
   // fingerboard: tapered box, top face at y = 0
   const fbGeo = new THREE.BoxGeometry(X_END + 0.004, FB_THICK, 1, 1, 1, 1);

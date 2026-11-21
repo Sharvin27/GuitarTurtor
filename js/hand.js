@@ -3,6 +3,7 @@
 // toward the fingertip, +Y is dorsal/nail side, so local X is the flexion axis).
 // We run our own forward kinematics in Armature space and write bone position+quaternion each frame.
 import * as THREE from 'three';
+import { applyTexture } from './guitar.js';
 
 export const FINGERS = ['index', 'middle', 'ring', 'pinky'];
 const D2R = Math.PI / 180;
@@ -52,6 +53,7 @@ export class HandRig {
         o.frustumCulled = false;
         o.castShadow = true;
         o.material = new THREE.MeshStandardMaterial({ color: 0xe2b392, roughness: 0.62, metalness: 0.0 });
+        applyTexture(o.material, 'skin.jpg', { repeat: [3, 3], tint: 0xffeee6 });
       }
     });
     const B = n => this.bones[n];
@@ -94,6 +96,7 @@ export class HandRig {
     const ageo = new THREE.CylinderGeometry(0.03, 0.025, 1, 20, 1, false);  // top = elbow end
     ageo.translate(0, 0.5, 0);
     this.arm = new THREE.Mesh(ageo, new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.65 }));
+    applyTexture(this.arm.material, 'skin.jpg', { repeat: [2, 4], tint: 0xf4e6dc });
     this.arm.castShadow = true;
     this.arm.name = side + 'Forearm';
     this.invPlace = new THREE.Matrix4();
