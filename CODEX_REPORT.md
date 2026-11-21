@@ -102,3 +102,66 @@ Synthetic audio correctly names C, G, Am and F individually with both pure sine 
 **Known limits and skipped work.** No live microphone/tab-share permission session, real ONNX/TF.js inference run, WebGL visual review or audio-device latency measurement was performed. Controller and storage tests use API doubles; real browser codecs, quota, eviction and permissions still vary. A recording that cannot be stored falls back to video/synth; failed audio deletion may require retrying when storage is accessible or clearing site data. Saved audio playback was added only to the requested 3D view; tabs.html remains untouched.
 
 The browser detector intentionally substitutes an FFT chromagram for Python's harmonic separation/CQT and uses the permitted fixed 0.5 s windows. Beat-synchronous analysis, tuning estimation and optional seventh-chord templates were skipped to keep this dependency-free port small and verifiable. Dense mixes, percussion, strong harmonics, single-note overtones, fast changes and non-standard tuning can confuse it; confidence is a heuristic, not a calibrated probability. Grouping can miss slow strums beyond 50 ms or quieter chord tones. Chord names do not infer missing tab pitches. String assignment enforces the requested geometric constraints, but the existing rig still lacks a true barre pose, and the monophonic beam search does not optimize transitions between whole chord shapes. Those animation/solver extensions were outside this change and would require new motion evidence before altering the protected hand paths.
+
+## Refinement round: strums, chord lifetimes, detector and caching
+
+Continued from `9999ed2` on 2026-11-21. Read both existing report sections, the requested modules, controller, measurement tool and all fixtures before editing. Baseline was 21 passing tests, with Choo Lo 0.10/0.49 mm and Rabba 0.51/3.09 mm fretting error (mean/max). Implemented and verified A, B, C, then D; inspected E without deleting anything. This section supersedes the earlier grouping/detector/cache limitations where addressed below.
+
+**A. Complete strums before the melody filter.** `js/songmaker.js` now considers the complete overlapping, playable strum before applying the melody's relative-amplitude skyline. The earlier extension required every string to reach 75% of the strongest note, then applied that filter again when assigning the chord. Unequal model strengths could therefore split a sweep or remove its identifying tones even within 50 ms. Strum recognition retains the absolute 0.3 floor, distinct pitches, overlap, six-string/four-fret playability, 90 ms general span and 100 ms monotonic span. It preserves pitches and places the chord at the earliest onset. Quiet/unplayable groups still take the original melody path. The serialized monophonic fixture remains byte-identical at all three offsets, with and without the shape library.
+
+Expanded the existing test to 8, 12 and 15 ms/string, up/down, library/no-library, with unequal strengths `[.42, .85, .56, .71, .38, .63]`. These are deterministic note-event fixtures using the KS chord pitches and timing, **not newly transcribed Basic Pitch output**. Paired runs against the converter in HEAD gave the same results in both directions:
+
+| Per-string spread | HEAD score events / chord events | Revised score events / chord events |
+| --- | ---: | ---: |
+| 8 ms | 8 / 0 | 8 / 8 |
+| 12 ms | 12 / 0 | 8 / 8 |
+| 15 ms | 16 / 0 | 8 / 8 |
+
+Each revised strum produces exactly one chord event at .5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5 or 7.5 seconds. The older equal-amplitude 12 ms fixture already passed at HEAD; it did not expose this failure.
+
+**B. Chord lifetimes and panel segments.** Chord events additionally retain a relative `sustain` duration from the detected note ends; monophonic records stay unchanged. `js/chord-agreement.js` constructs note overrides independently of audio-window boundaries. A melody/dyad fragment no longer cancels a chord. Overrides begin at the first onset even when the detector's first labelled window starts later, and stop at the next named chord, measured sustain end or explicit rest. An explicit rest can end at a subsequent melody onset. Older scores lacking measured sustain use the existing audio horizon rather than guessing silence from quantized beat lengths.
+
+The shared cleanup rounds boundaries consistently, excludes invalid/empty intervals, merges identical adjacent name/source pairs with minimum confidence, then removes segments shorter than 50 ms. New creation already calls this reconciliation before saving/downloading; runtime applies it to older scores too. The panel uses original score records when available so normalization cannot discard `sustain`. Its countdown skips every repeat of the current chord, uses exact segment ends and rounds a positive countdown upward to avoid displaying `0.0 s` for a future onset.
+
+A paired held-chord/rest fixture, with the same audio windows and notes on both versions, changed from four segments (`Em 1–1.5`, `C 1.5–3`, `F 3–3.5`, `Em 3.5–5`) to two (`C .5–2.5`, `F 3–3.5`), correctly preserving the intervening/final rests. Confidence is still audio evidence, not a recalibrated probability; a note-only extension without audio evidence conservatively contributes confidence zero.
+
+The actual create controller, with the unequal-strength eight-strum model double and deliberately wrong Em/A audio labels, now saves exactly four segments: C .5–2.5, G 2.5–4.5, Am 4.5–6.5, F 6.5–8.5. Runtime reconciliation gives the identical array, including after time shifts and repeated reconciliation. At .5/1.7/2.7/4.7/6.7/7.7 s the labels are C/C/G/Am/F/F. Dedicated panel-method checks cover repeated names, zero/sub-50 ms intervals, seeking backward and segment ends.
+
+**C. Detector measurements and the WAV discrepancy.** Kept only the tested combination of a gentle `1/sqrt(frequency)` spectral rolloff and square-root compression of aggregated chroma strengths. The first reduces upper-partial dominance; the second balances unequal string strengths. FFT size, templates, tuning tolerance, half-second windows and Viterbi transition costs remain unchanged. Rejected rolloff-only and some per-peak compression combinations because they reduced accuracy on existing fixtures. Final detector output also excludes sub-50 ms terminal segments.
+
+`tools/fixtures/audio-chords-baseline.mjs` is byte-identical to HEAD's detector after LF normalization. `node tools/measure-chords.mjs .qa/strum_C_G_Am_F.wav` compares that baseline with the revised implementation. Percentages measure duration with the correct label over the annotated intervals; they are not note-transcription accuracy, and do not penalize labels outside those intervals.
+
+| Fixture | Before | After |
+| --- | ---: | ---: |
+| Sine C G Am F | 100% | 100% |
+| Five-harmonic C G Am F | 100% | 100% |
+| KS C G Am F | 100% | 100% |
+| KS C G Am F, +35 cents | 100% | 100% |
+| KS C G Am F, −35 cents | 100% | 100% |
+| KS D A Bm G | 87.5% | 87.5% |
+| KS D A Bm G, +35 cents | 81.25% | 100% |
+| KS D A Bm G, −35 cents | 93.75% | 100% |
+| KS Em C G D | 93.75% | 100% |
+| KS Em C G D, +35 cents | 100% | 100% |
+| KS Em C G D, −35 cents | 93.75% | 100% |
+| Supplied PCM WAV, C G Am F | 62.5% | 100% |
+
+Across the original 80 annotated seconds, accuracy rises from 95% to 98.75%; completely correct chord intervals rise from 39/44 to 43/44. No fixture loses accuracy. The remaining D–A–Bm–G failure is one unlabelled second at the start of G; the detector still abstains there.
+
+Added a small dependency-free diagnostic RIFF decoder in `tools/fixtures/wav.mjs`, with tests for signed PCM values, stereo averaging, padded chunks and truncation. It reads the supplied file directly: 22,050 Hz, mono, signed 16-bit PCM, 209,475 samples / 9.5 s. SHA-256: `c233199211b4ff98822d0969bafb64ed83569b3ead40b4e123d06ac785d6eefd`. No resampling or browser decode is needed for this format. The WAV remains untracked in `.qa/`.
+
+The old detector on those samples reproduces Em at .5, C at 1.5, G at 2.5, Em at 4.5, A at 5 and F at 6.5. Thus the detector failure exists in the waveform analysis itself, independently of browser caching or score reconciliation. The JS KS fixture and this WAV have different spectral balances: in the first C window, normalized C/E/G/B chroma is approximately .52/.63/.43/.22 for the JS fixture, versus .38/.66/.34/.43 for the WAV. The latter favors Em. In the WAV's Am window at 5 s, Db is .23 versus C .19, while E dominates at .76, favoring A major. Upper harmonics can create these competing classes (E's third partial is near B; A's fifth is near Db). The analysis demonstrates excessive weighting of these partials and strong strings; the precise excitation/seed used to generate the WAV is not available. A PCM16-quantized version of the JS fixture still scores 100% before the change, so PCM quantization alone does not explain the discrepancy.
+
+After the change the WAV yields C .5–2.5, G 2.5–4.5, Am 4.5–6.5 and F 6.5–9.0. The final F extends 0.5 s beyond the annotated interval; the 100% figure excludes that tail. Measured note sustain supplies the more precise endpoint when creating a score.
+
+**D. Content hashing.** `tools/stamp.mjs` now creates a missing import map before module loads, traverses re-exports and parent-directory dependencies as well as imports, and generates matching preloads. The five local modules in create's graph all resolve with `?v=`: `js/songmaker.js`, `js/chord-agreement.js`, `chords/chordnamer.js`, `js/song-audio.js`, `js/audio-chords.js`. Before, only the three direct entry imports were hashed; both transitive modules were unversioned. Inline entry imports now use the map, avoiding separate URLs for the same module. Existing CDN versions remain pinned; remote model/library downloads are outside the local content-hash graph.
+
+Regression checks resolve each edge relative to a hashed parent URL and verify its exact SHA-256 content hash and preload. They also verify map ordering, re-export/literal dynamic import discovery, CRLF-to-LF normalization and byte-for-byte idempotence. Two consecutive `npm run stamp` invocations leave the second with `already up to date`. Generated index/create pages are LF-only, and classic-only `tabs.html` remains byte-identical. Live network-request inspection was unavailable; the import-resolution check is a static graph verification.
+
+**E. Temporary songs.** The tracked catalog contains only Rabba, Choo Lo and Falling in Love with You. No temporary QA song was found in repo catalog/score files, so none was removed. Existing localStorage songs and the pre-existing untracked `lessons/` directory were left alone.
+
+**Sources and validation.** The evidence is the paired HEAD implementations, [converter/panel/controller regression cases](tools/regression.mjs), [deterministic audio fixtures and accuracy definition](tools/fixtures/audio.mjs), [frozen detector baseline](tools/fixtures/audio-chords-baseline.mjs), [measurement command](tools/measure-chords.mjs), [PCM decoder](tools/fixtures/wav.mjs), and the supplied WAV and Chrome QA observations. Pitch naming continues to use the existing [chord namer](chords/chordnamer.js). The earlier research links remain background; no new external accuracy benchmark is claimed.
+
+Final checks: **28/28 regression tests pass**. `npm run selfcheck` preserves Choo Lo **0.10/0.49 mm** and Rabba **0.51/3.09 mm**, with the other reported selfcheck metrics unchanged. `node --check` passes for every touched JS/MJS file and create's extracted inline module; `npm run stamp` and `git diff --check` pass. Protected paths have no tracked changes. No runtime dependencies, new CDN libraries, commits, pushes, git configuration changes or uploads.
+
+**Remaining validation limit.** The user-supplied Chrome/real Basic Pitch baseline was 13 score events, 5/8 chord strums and ten saved chord segments, with a missing initial chord and Am at 6.7 s. That end-to-end run could not be repeated here: computer-use inventory returned `The browser access host is unavailable`, and direct model/package downloads from this restricted shell failed. The attempted isolated install was cancelled and installed no dependencies. Therefore the new eight-strum counts and four saved segments are verified on deterministic converter/controller inputs, not on freshly inferred notes from this WAV. Actual Chrome Basic Pitch producing 8/8 chord events remains unverified. Older saved scores cannot recover pitches already discarded by their original conversion, and without measured sustain or explicit rests their end times remain limited by existing audio evidence. Dense mixes, missing/quiet notes, unplayable groups and strums beyond 100 ms remain outside the demonstrated cases.

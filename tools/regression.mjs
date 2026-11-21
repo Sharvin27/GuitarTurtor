@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { stampHTML, localImports } from './stamp.mjs';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HandRig } from '../js/hand.js';
 import { Performer } from '../js/performer.js';
@@ -11,11 +13,13 @@ import { analyzeHarmony } from '../js/harmony.js';
 import { createHarness } from './fixtures/create-harness.mjs';
 import { loadSongAudio, saveSongAudio, deleteSongAudio, shiftScore } from '../js/song-audio.js';
 import { assignChord, toScore, reconcileChords } from '../js/songmaker.js';
-import { playedChordName } from '../js/chord-agreement.js';
+import { playedChordName, cleanChordSegments } from '../js/chord-agreement.js';
 import { describeNotes } from '../js/theory.js';
 import { detectAudioChords } from '../js/audio-chords.js';
-import { chordSource } from '../js/chordpanel.js';
-import { CHORDS, tone, joinAudio } from './fixtures/audio.mjs';
+import { chordSource, ChordPanel } from '../js/chordpanel.js';
+import { CHORDS, tone, joinAudio, audioFixtures, chordAccuracy } from './fixtures/audio.mjs';
+import { detectAudioChords as baselineChords } from './fixtures/audio-chords-baseline.mjs';
+import { decodePCM16Wav } from './fixtures/wav.mjs';
 import { playbackHarness } from './fixtures/playback-harness.mjs';
 import { fakeIndexedDB } from './fixtures/indexeddb.mjs';
 
@@ -24,6 +28,33 @@ const melody = () => ({ bpm: 120, notes: Array.from({ length: 8 }, (_, i) => ({ 
 const library = JSON.parse(fs.readFileSync(new URL('../chords/chord_shapes.json', import.meta.url)));
 const rawChord = (ps, t = 0, a = 1) => ps.map((p, i) => ({ t: t + i * .008, e: t + .5, p, a }));
 const openMidi = [64, 59, 55, 50, 45, 40];
+
+test('create import map hashes every local entry, re-export and parent-directory dependency', () => {
+  const html = fs.readFileSync(new URL('../create.html', import.meta.url), 'utf8');
+  const stamped = stampHTML(html), match = stamped.match(/<script type="importmap">([\s\S]*?)<\/script>/);
+  const { imports } = JSON.parse(match[1]), base = 'https://example.test/tutor/';
+  const resolved = new Map(Object.entries(imports).map(([k, v]) => [new URL(k, base).href, new URL(v, base).href]));
+  assert.ok(match.index < stamped.indexOf('<link rel="modulepreload"'));
+  const edges = [
+    ['create.html', './js/songmaker.js'], ['create.html', './js/song-audio.js'], ['create.html', './js/audio-chords.js'],
+    ['js/songmaker.js?v=parent', './chord-agreement.js'], ['js/chord-agreement.js?v=parent', '../chords/chordnamer.js'],
+  ];
+  for (const [parent, specifier] of edges) {
+    const plain = new URL(specifier, base + parent), target = new URL(resolved.get(plain.href));
+    const file = plain.pathname.slice('/tutor/'.length);
+    const source = fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8').replace(/\r\n?/g, '\n');
+    assert.equal(target.searchParams.get('v'), crypto.createHash('sha256').update(source).digest('hex').slice(0, 10), file);
+    assert.ok(stamped.includes(`href="${file}${target.search}"`), file + ' preload');
+  }
+  assert.equal(stampHTML(stamped), stamped);
+  assert.equal(stampHTML(stamped.replace(/\n/g, '\r\n')), stamped);
+  assert.ok(!stamped.includes('\r'));
+  assert.equal(stamped, html, 'run npm run stamp');
+  const tabs = fs.readFileSync(new URL('../tabs.html', import.meta.url), 'utf8');
+  assert.equal(stampHTML(tabs), tabs, 'classic-only tabs.html stays byte-identical');
+  assert.deepEqual(localImports("export { x } from '../chords/x.js';\nimport './side.js';\nconst f = () => import('./lazy.js');\nimport 'three';"),
+    ['../chords/x.js', './side.js', './lazy.js']);
+});
 
 test('3D loads the exact stored Blob before other sources and is ready for Play', async () => {
   const score = { bpm: 120, grid: [12, 12.5], notes: [{ t: 12.2, n: [[0, 0]] }], chords: [{ t0: 12, t1: 13, name: 'C', conf: .9 }] };
@@ -99,6 +130,31 @@ test('audio smoothing follows a progression and leaves silence unlabelled', asyn
   assert.deepEqual(await detectAudioChords(new Float32Array()), []);
 });
 
+test('detector improves the fixture suite without losing accuracy on any fixture', async () => {
+  let improvement = 0;
+  for (const f of audioFixtures()) {
+    const before = chordAccuracy(await baselineChords(f.y), f.truth).percent;
+    const after = chordAccuracy(await detectAudioChords(f.y), f.truth).percent;
+    assert.ok(after >= before, f.name + ': ' + before + ' -> ' + after);
+    improvement += after - before;
+  }
+  assert.ok(improvement > 0);
+});
+
+test('PCM WAV decoding preserves signed samples, channel averaging and chunk padding', () => {
+  const b = Buffer.alloc(62);
+  b.write('RIFF'); b.writeUInt32LE(54, 4); b.write('WAVE', 8);
+  b.write('JUNK', 12); b.writeUInt32LE(1, 16); b[20] = 123;
+  b.write('fmt ', 22); b.writeUInt32LE(16, 26); b.writeUInt16LE(1, 30);
+  b.writeUInt16LE(2, 32); b.writeUInt32LE(22050, 34); b.writeUInt32LE(88200, 38);
+  b.writeUInt16LE(4, 42); b.writeUInt16LE(16, 44); b.write('data', 46); b.writeUInt32LE(8, 50);
+  [-32768, 0, 32767, 16384].forEach((v, i) => b.writeInt16LE(v, 54 + 2 * i));
+  const decoded = decodePCM16Wav(b);
+  assert.equal(decoded.sampleRate, 22050); assert.equal(decoded.channels, 2);
+  assert.deepEqual([...decoded.y], [-.5, (32767 + 16384) / 65536]);
+  assert.throws(() => decodePCM16Wav(b.subarray(0, 60)), /Truncated/);
+});
+
 test('panel prefers audio segments, including an empty result, and labels melody fallback', () => {
   const events = prepare(melody()), chords = [{ t0: 0, t1: 1, name: 'C', conf: .9 }];
   assert.deepEqual(chordSource({ chords }, events), { segs: chords, label: 'from the audio' });
@@ -134,10 +190,10 @@ test('played triads/sevenths split audio labels, survive shifts and guard older 
   assert.equal(playedChordName({ n: [[0, 0], [1, 1], [2, 0], [4, 3]] }), 'C');
   assert.equal(playedChordName({ n: [[0, 0], [1, 1], [2, 3], [4, 3]] }), 'C7');
   assert.equal(playedChordName({ n: [[0, 0], [1, 1]] }), null);
-  const reset = reconcileChords(chords, [notes[0], { t: 1, n: [[0, 0]] }]);
-  assert.deepEqual(reset.slice(0, 3).map(s => [s.t0, s.t1, s.name]), [[0, .5, 'Em'], [.5, 1, 'C'], [1, 5, 'Em']]);
-  assert.deepEqual(reconcileChords([], notes), []);
-  assert.deepEqual(reconcileChords([{ t0: 0, t1: .5, name: 'G' }], notes).map(s => s.name), ['G']);
+  const held = reconcileChords(chords, [notes[0], { t: 1, n: [[0, 0]] }]);
+  assert.deepEqual(held.map(s => [s.t0, s.t1, s.name]), [[0, .5, 'Em'], [.5, 8.5, 'C']]);
+  assert.deepEqual(reconcileChords([], [{ ...notes[0], sustain: 1 }]).map(s => [s.t0, s.t1, s.name]), [[.5, 1.5, 'C']]);
+  assert.deepEqual(reconcileChords([{ t0: 0, t1: .5, name: 'G' }], [notes[0]]).map(s => s.name), ['G']);
 });
 
 test('creation persists note-agreed labels before navigation', async () => {
@@ -145,8 +201,67 @@ test('creation persists note-agreed labels before navigation', async () => {
   h.get('file').onchange({ target: { files: [new File(['upload'], 'fixture.wav')] } });
   await h.get('go').onclick();
   const song = [...h.songs.values()][0];
-  assert.deepEqual(song.score.chords.map(s => [s.t0, s.t1, s.name]), [[0, .2, 'Em'], [.2, 1, 'Am']]);
+  assert.deepEqual(song.score.chords.map(s => [s.t0, s.t1, s.name]), [[0, .2, 'Em'], [.2, .7, 'Am']]);
   assert.equal(h.navigation[0], 'index.html#' + song.id);
+});
+
+test('eight strums save four held segments and the runtime panel agrees at the QA timestamps', async () => {
+  const pitches = [[48, 52, 55, 60, 64], [43, 47, 50, 55, 59, 67], [45, 52, 57, 60, 64], [41, 48, 53, 57, 60, 65]];
+  const notes = pitches.flatMap((ps, c) => [0, 1].flatMap(beat => ps.map((p, s) => ({
+    p, t: .5 + 2 * c + beat + .012 * s, e: 2.5 + 2 * c, a: [.42, .85, .56, .71, .38, .63][s],
+  }))));
+  const h = createHarness({ notes, chords: [{ t0: .5, t1: 5, name: 'Em', conf: .8 }, { t0: 5, t1: 9, name: 'A', conf: .6 }] });
+  h.get('file').onchange({ target: { files: [new File(['fixture'], 'strum.wav')] } });
+  await h.get('go').onclick();
+  const { score } = [...h.songs.values()][0];
+  assert.equal(score.notes.length, 8);
+  assert.ok(score.notes.every(n => playedChordName(n)));
+  assert.deepEqual(score.chords.map(s => [s.t0, s.t1, s.name]), [[.5, 2.5, 'C'], [2.5, 4.5, 'G'], [4.5, 6.5, 'Am'], [6.5, 8.5, 'F']]);
+  const runtime = chordSource(score, normalizeScore(score)).segs;
+  assert.deepEqual(runtime, score.chords);
+  assert.deepEqual([.5, 1.7, 2.7, 4.7, 6.7, 7.7].map(t => runtime.find(s => s.t0 <= t && t < s.t1)?.name),
+    ['C', 'C', 'G', 'Am', 'F', 'F']);
+});
+
+test('held strums bridge audio windows from t0, ignore fragments, and stop at measured or explicit rests', () => {
+  const C = [[0, 0], [1, 1], [2, 0], [4, 3]], F = [[0, 1], [1, 1], [2, 2], [5, 1]];
+  const notes = [{ t: .5, n: C, sustain: 2 }, { t: .7, n: [[0, 0]] },
+    { t: 1.5, n: C, sustain: 1 }, { t: 3, n: F, sustain: 1 }, { t: 3.5, n: [] }];
+  const audio = [{ t0: 1, t1: 1.51, name: 'Em', conf: .8 },
+    { t0: 1.51, t1: 2, name: 'A', conf: .6 }, { t0: 2, t1: 5, name: 'Em', conf: .9 }];
+  const before = structuredClone({ notes, audio }), segs = reconcileChords(audio, notes);
+  assert.deepEqual(segs.map(s => [s.t0, s.t1, s.name]), [[.5, 2.5, 'C'], [3, 3.5, 'F']]);
+  assert.deepEqual(reconcileChords(segs, notes), segs);
+  assert.deepEqual(chordSource({ chords: audio, notes }, normalizeScore({ notes })).segs, segs);
+  assert.deepEqual({ notes, audio }, before);
+  const shifted = shiftScore({ chords: audio, notes }, 12);
+  assert.deepEqual(reconcileChords(shifted.chords, shifted.notes), shiftScore({ chords: segs, notes }, 12).chords);
+  const resumed = reconcileChords(audio, [...notes, { t: 4, n: [[0, 0]] }]);
+  assert.deepEqual(resumed.map(s => [s.t0, s.t1, s.name]), [[.5, 2.5, 'C'], [3, 3.5, 'F'], [4, 5, 'Em']]);
+});
+
+test('segment cleanup rejects tiny/invalid intervals and keeps minimum confidence across windows', () => {
+  const segs = cleanChordSegments([
+    { t0: 0, t1: 1, name: 'C', conf: .9, source: 'notes' },
+    { t0: 1, t1: 1.02, name: 'C', conf: .4, source: 'notes' },
+    { t0: 1.02, t1: 2, name: 'C', conf: .8, source: 'notes' },
+    { t0: 2, t1: 2, name: 'Em' }, { t0: 2, t1: 2.049, name: 'Em' },
+    { t0: 3, t1: 3.05, name: 'G' }, { t0: NaN, t1: 4, name: 'A' },
+  ]);
+  assert.deepEqual(segs, [{ t0: 0, t1: 2, name: 'C', conf: .4, source: 'notes' }, { t0: 3, t1: 3.05, name: 'G' }]);
+  assert.deepEqual(cleanChordSegments(segs), segs);
+});
+
+test('panel countdown skips repeated chords, tiny segments and never rounds a future onset to zero', () => {
+  const panel = Object.create(ChordPanel.prototype);
+  panel.el = {}; panel.ui = { next: {} }; panel._show = s => { panel.current = s?.name ?? null; };
+  panel.setSegments([{ t0: .5, t1: 1.5, name: 'C' }, { t0: 1.5, t1: 2.5, name: 'C', source: 'notes' },
+    { t0: 2.5, t1: 2.5, name: 'Em' }, { t0: 2.5, t1: 3.5, name: 'G' }]);
+  for (const t of [.5, 1.7, 2.49, .6]) {
+    panel.update(t); assert.equal(panel.current, 'C'); assert.match(panel.ui.next.innerHTML, /<b>G<\/b>/);
+    assert.doesNotMatch(panel.ui.next.innerHTML, /0\.0 s/);
+  }
+  panel.update(3.5); assert.equal(panel.current, null); assert.equal(panel.ui.next.innerHTML, '');
 });
 
 test('loud overlapping chord notes share one event and repeated strums survive', () => {
@@ -170,11 +285,11 @@ test('quiet, non-overlapping, two-class and unplayable groups retain the melody 
   assert.equal(toScore(rawChord([60, 64, 67]).map((n, i) => ({ ...n, t: i * .2, e: i * .2 + .15 }))).notes.length, 3);
 });
 
-test('12 ms per string strums stay whole at their first onset, in both directions', () => {
+test('KS-style 8/12/15 ms per string strums stay whole at their first onset, in both directions', () => {
   const chords = [[48, 52, 55, 60, 64], [43, 47, 50, 55, 59, 67], [45, 52, 57, 60, 64], [41, 48, 53, 57, 60, 65]];
-  for (const reverse of [false, true]) for (const lib of [null, library]) {
+  for (const spread of [.008, .012, .015]) for (const reverse of [false, true]) for (const lib of [null, library]) {
     const raw = chords.flatMap((ps, c) => [0, 1].flatMap(beat => (reverse ? [...ps].reverse() : ps)
-      .map((p, s) => ({ p, t: .5 + 2 * c + beat + .012 * s, e: 2.5 + 2 * c, a: 1 }))));
+      .map((p, s) => ({ p, t: .5 + 2 * c + beat + spread * s, e: 2.5 + 2 * c, a: [.42, .85, .56, .71, .38, .63][s] }))));
     const score = toScore(raw, 0, .75, lib);
     assert.deepEqual(score.notes.map(n => n.t), [.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5]);
     score.notes.forEach((n, i) => assert.deepEqual(n.n.map(([s, f]) => openMidi[s] + f).sort((a, b) => a - b), chords[i >> 1]));

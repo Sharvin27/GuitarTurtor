@@ -2,11 +2,11 @@
 // playable shape from the chord library (chords/chord_shapes.json), and the next chord with a countdown.
 // Toggle with the panel's button or the C key. Only touches the DOM when what it shows changes.
 import { analyzeHarmony } from './harmony.js';
-import { reconcileChords } from './chord-agreement.js';
+import { reconcileChords, cleanChordSegments } from './chord-agreement.js';
 
 export function chordSource(score, events) {
   const audio = Array.isArray(score.chords);
-  const segs = reconcileChords(audio ? score.chords : analyzeHarmony(events), events || score.notes || []);
+  const segs = reconcileChords(audio ? score.chords : analyzeHarmony(events), score.notes || events || []);
   return { segs, label: segs.some(s => s.source === 'notes') ? 'from played notes and audio' :
     audio ? 'from the audio' : 'estimated from the melody' };
 }
@@ -64,7 +64,7 @@ export class ChordPanel {
   }
 
   /** segments from analyzeHarmony(); an empty list hides the panel */
-  setSegments(segs) { this.segs = segs || []; this.shown = undefined; this.el.hidden = !this.segs.length; }
+  setSegments(segs) { this.segs = cleanChordSegments(segs || []); this.shown = undefined; this.el.hidden = !this.segs.length; }
 
   setScore(score, events) {
     const { segs, label } = chordSource(score, events);
@@ -77,11 +77,11 @@ export class ChordPanel {
     // current segment (binary search on t0) and the next one with a different chord
     let lo = 0, hi = this.segs.length - 1, i = -1;
     while (lo <= hi) { const m = (lo + hi) >> 1; if (this.segs[m].t0 <= T) { i = m; lo = m + 1; } else hi = m - 1; }
-    const cur = i >= 0 && T < this.segs[i].t1 + 0.05 ? this.segs[i] : null;
-    const nx = this.segs[i + 1] || null;
+    const cur = i >= 0 && T < this.segs[i].t1 ? this.segs[i] : null;
+    const nx = this.segs.slice(i + 1).find(s => s.name !== cur?.name) || null;
     const key = (cur ? cur.name : '') + '|' + (this.lib ? 1 : 0);
     if (key !== this.shown) { this.shown = key; this._show(cur); }
-    const nt = nx ? `next: <b>${pretty(nx.name)}</b> in ${Math.max(0, nx.t0 - T).toFixed(1)} s` : '';
+    const nt = nx ? `next: <b>${pretty(nx.name)}</b> in ${(Math.ceil(Math.max(0, nx.t0 - T) * 10) / 10).toFixed(1)} s` : '';
     if (nt !== this.nextTxt) { this.nextTxt = nt; this.ui.next.innerHTML = nt; }
   }
 

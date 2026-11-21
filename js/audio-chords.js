@@ -53,7 +53,10 @@ function chroma(y, a, b, sr) {
       const l = Math.log(mag[k - 1] + 1e-12), m = Math.log(mag[k] + 1e-12), r = Math.log(mag[k + 1] + 1e-12);
       const delta = Math.max(-.5, Math.min(.5, .5 * (l - r) / (l - 2 * m + r)));
       const pitch = 69 + 12 * Math.log2((k + delta) * sr / N / 440), note = Math.round(pitch);
-      if (note >= 36 && note <= 95 && Math.abs(pitch - note) < .4) c[note % 12] += mag[k];
+      // Reduce upper-partial dominance before folding octaves. For example, E's
+      // third harmonic contributes B, and A's fifth contributes Db: neither is
+      // necessarily another played string. Use a gentle 1/sqrt(frequency) rolloff.
+      if (note >= 36 && note <= 95 && Math.abs(pitch - note) < .4) c[note % 12] += mag[k] * 2 ** (-(note - 48) / 24);
     }
     frames.push(c);
   }
@@ -61,6 +64,9 @@ function chroma(y, a, b, sr) {
     const xs = frames.map(f => f[p]).sort((a, b) => a - b), mid = xs.length >> 1;
     return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
   });
+  // Balance uneven string/excitation strengths without a gain-dependent floor.
+  // Compress AFTER aggregation, so a forest of small peaks cannot outvote a tone.
+  c.forEach((x, p) => { c[p] = Math.sqrt(x); });
   const norm = Math.hypot(...c), peak = Math.max(...c);
   if (!norm || c.filter(x => x > peak * .18).length < 3) return null;
   return c.map(x => x / norm);
@@ -104,5 +110,6 @@ export async function detectAudioChords(y, { sampleRate = 22050, windowSeconds =
     } else segments.push({ t0, t1, name, conf });
   });
   progress(1);
-  return segments.map(s => ({ ...s, t0: +s.t0.toFixed(3), t1: +s.t1.toFixed(3), conf: +s.conf.toFixed(3) }));
+  return segments.map(s => ({ ...s, t0: +s.t0.toFixed(3), t1: +s.t1.toFixed(3), conf: +s.conf.toFixed(3) }))
+    .filter(s => s.t1 - s.t0 >= .05 - 1e-9);
 }
