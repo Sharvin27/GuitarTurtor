@@ -1,0 +1,611 @@
+{
+ "note": "Strings 0..5 = low E..high e. strum grid tokens: D/U down/up, d/u light, \">\" accent, \"p\" suffix palm-muted, x dead-muted chuck, \"-\" rest. Down hits all strings (low to high), up hits the top 4 (2..5, high to low) unless stroke_strings overrides. Timing defaults (ms): down per-string spread 5-12, up 4-9, stroke duration 90-160 shrinking with tempo; see strum_model.js.",
+ "tokens": {
+  "D": "down",
+  "U": "up",
+  "d": "light down",
+  "u": "light up",
+  ">": "accent",
+  "p": "palm-mute",
+  "x": "dead-muted strum",
+  "-": "rest"
+ },
+ "stroke_strings": {
+  "default": {
+   "D": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "U": [
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  "top3": {
+   "D": [
+    3,
+    4,
+    5
+   ],
+   "U": [
+    3,
+    4,
+    5
+   ]
+  },
+  "bass_then_top": {
+   "D": [
+    0
+   ],
+   "d": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "U": [
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  "bassmix": {
+   "D": [
+    0,
+    3,
+    4,
+    5
+   ],
+   "U": [
+    3,
+    4,
+    5
+   ]
+  }
+ },
+ "strum": [
+  {
+   "id": "down8",
+   "name": "All down eighths",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D D D D D D D D",
+   "bpm": [
+    70,
+    140
+   ],
+   "difficulty": 1,
+   "songs": [
+    "Knockin on Heaven's Door (simple)",
+    "many punk songs"
+   ],
+   "description": "Down on every 8th note. Easiest start.",
+   "type": "strum"
+  },
+  {
+   "id": "quarters",
+   "name": "Quarter-note downs",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D - D - D - D -",
+   "bpm": [
+    60,
+    120
+   ],
+   "difficulty": 1,
+   "songs": [
+    "slow ballads"
+   ],
+   "description": "One down per beat.",
+   "type": "strum"
+  },
+  {
+   "id": "basic",
+   "name": "D DU UDU (the universal pattern)",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D - D U - U D U",
+   "bpm": [
+    70,
+    130
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Wonderwall",
+    "Let It Be",
+    "Riptide",
+    "Brown Eyed Girl"
+   ],
+   "description": "Beats 1, 2&, 3&, 4 and 4& - the most used pop/folk strum. Count 1 2 & & 4 &. Keep the arm swinging, miss the strings on the rests.",
+   "type": "strum"
+  },
+  {
+   "id": "ddudu",
+   "name": "D D UDU",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D - D - - U D U",
+   "bpm": [
+    70,
+    120
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Hey Soul Sister (similar)",
+    "Hallelujah (fast)"
+   ],
+   "description": "Down on 1, 2, then 3-and-4 pattern: D D (rest) UDU.",
+   "type": "strum"
+  },
+  {
+   "id": "folk",
+   "name": "Folk strum",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D - D U D - D U",
+   "bpm": [
+    80,
+    130
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Mr. Tambourine Man",
+    "Free Fallin"
+   ],
+   "description": "Down on each beat with an up after 2 and 4 - the Johnny Cash boom-chick feel.",
+   "type": "strum"
+  },
+  {
+   "id": "pop",
+   "name": "Pop 8ths with accent",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D> u D u D> u D u",
+   "bpm": [
+    90,
+    130
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Shape of You (uke/gtr)",
+    "Counting Stars"
+   ],
+   "description": "Alternate down accents on 1 and 3, light ups.",
+   "type": "strum"
+  },
+  {
+   "id": "rock8",
+   "name": "Rock 8ths (palm-muted)",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "Dp Dp Dp Dp Dp Dp Dp Dp",
+   "bpm": [
+    100,
+    180
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Back In Black verses",
+    "Smoke On The Water (chords)"
+   ],
+   "description": "Steady palm-muted downstrokes, open the mute on accents.",
+   "type": "strum",
+   "pm": true
+  },
+  {
+   "id": "rock_open",
+   "name": "Rock 8ths accented",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D> D D> D D> D D> D",
+   "bpm": [
+    100,
+    180
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Sweet Home Alabama (feel)"
+   ],
+   "description": "Eight downs, accent on the beats.",
+   "type": "strum"
+  },
+  {
+   "id": "reggae",
+   "name": "Reggae / ska offbeat",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "- u - u - u - u",
+   "bpm": [
+    60,
+    160
+   ],
+   "difficulty": 2,
+   "songs": [
+    "No Woman No Cry",
+    "Three Little Birds",
+    "Is This Love"
+   ],
+   "description": "Short, clipped up-strokes on the offbeats (the &), top 3-4 strings only.",
+   "type": "strum",
+   "stroke_strings": "top3"
+  },
+  {
+   "id": "funk16",
+   "name": "Funk 16ths (muted)",
+   "time_sig": "4/4",
+   "subdivision": "16th",
+   "steps_per_bar": 16,
+   "beats_per_bar": 4,
+   "step_beats": 0.25,
+   "grid": "D x D x U x D x D x D x U x D x",
+   "bpm": [
+    80,
+    110
+   ],
+   "difficulty": 4,
+   "songs": [
+    "Play That Funky Music",
+    "Superstition (rhythm)"
+   ],
+   "description": "Constant 16th hand motion; x = percussive dead strums with the fretting hand released, accents on D.",
+   "type": "strum"
+  },
+  {
+   "id": "funk16b",
+   "name": "Funk 16ths (ghosted)",
+   "time_sig": "4/4",
+   "subdivision": "16th",
+   "steps_per_bar": 16,
+   "beats_per_bar": 4,
+   "step_beats": 0.25,
+   "grid": "D> x u x D x u D> x u x D x u x u",
+   "bpm": [
+    85,
+    105
+   ],
+   "difficulty": 4,
+   "songs": [
+    "Get Lucky",
+    "Uptown Funk (rhythm)"
+   ],
+   "description": "Syncopated 16ths with ghost ups and chucks.",
+   "type": "strum"
+  },
+  {
+   "id": "ballad",
+   "name": "Slow ballad",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D - - - D - D u",
+   "bpm": [
+    50,
+    80
+   ],
+   "difficulty": 1,
+   "songs": [
+    "Perfect",
+    "Thinking Out Loud (strum)"
+   ],
+   "description": "Big down on 1, light on 3, a little pickup into the next bar.",
+   "type": "strum"
+  },
+  {
+   "id": "ballad2",
+   "name": "Ballad 8ths",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D - d u - u D u",
+   "bpm": [
+    55,
+    85
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Photograph",
+    "Stand By Me (feel)"
+   ],
+   "description": "Softer version of the universal pattern.",
+   "type": "strum"
+  },
+  {
+   "id": "shuffle",
+   "name": "Shuffle / swing",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 12,
+   "beats_per_bar": 4,
+   "step_beats": 0.3333333333333333,
+   "grid": "D - U D - U D - U D - U",
+   "bpm": [
+    80,
+    140
+   ],
+   "difficulty": 3,
+   "songs": [
+    "Johnny B. Goode (feel)",
+    "Blues shuffle"
+   ],
+   "description": "Triplet feel: 12 triplet steps per bar; strum the 1st and 3rd partial of each beat (long-short).",
+   "type": "strum",
+   "swing": 0
+  },
+  {
+   "id": "bossa",
+   "name": "Bossa nova",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "grid": "D - D u - u D -",
+   "bpm": [
+    80,
+    140
+   ],
+   "difficulty": 3,
+   "songs": [
+    "The Girl From Ipanema",
+    "Corcovado"
+   ],
+   "description": "Syncopated bass-then-chord pulse (clave-like), fingers or soft pick.",
+   "type": "strum",
+   "stroke_strings": "bassmix"
+  },
+  {
+   "id": "waltz",
+   "name": "Waltz (3/4)",
+   "time_sig": "3/4",
+   "subdivision": "8th",
+   "steps_per_bar": 6,
+   "beats_per_bar": 3,
+   "step_beats": 0.5,
+   "grid": "D - d - d -",
+   "bpm": [
+    90,
+    180
+   ],
+   "difficulty": 1,
+   "songs": [
+    "Norwegian Wood",
+    "Tennessee Waltz",
+    "Moon River"
+   ],
+   "description": "Boom-chick-chick: bass note on 1, light chord downs on 2 and 3.",
+   "type": "strum",
+   "stroke_strings": "bass_then_top"
+  },
+  {
+   "id": "waltz2",
+   "name": "Waltz strum",
+   "time_sig": "3/4",
+   "subdivision": "8th",
+   "steps_per_bar": 6,
+   "beats_per_bar": 3,
+   "step_beats": 0.5,
+   "grid": "D - D U D U",
+   "bpm": [
+    90,
+    160
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Amazing Grace",
+    "Can't Help Falling In Love (3/4 feel)"
+   ],
+   "description": "Down on 1, D U on 2, D U on 3.",
+   "type": "strum"
+  },
+  {
+   "id": "six8",
+   "name": "6/8 strum",
+   "time_sig": "6/8",
+   "subdivision": "8th",
+   "steps_per_bar": 6,
+   "beats_per_bar": 2,
+   "step_beats": 0.3333333333333333,
+   "grid": "D - - D U -",
+   "bpm": [
+    50,
+    90
+   ],
+   "difficulty": 2,
+   "songs": [
+    "House of the Rising Sun (feel)",
+    "Nothing Else Matters"
+   ],
+   "description": "Two dotted-quarter beats, each 3 eighths: D on 1, DU on 4.",
+   "type": "strum"
+  }
+ ],
+ "pick": [
+  {
+   "id": "pima",
+   "name": "p-i-m-a arpeggio",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "steps": [
+    "p",
+    "i",
+    "m",
+    "a",
+    "m",
+    "i",
+    "m",
+    "i"
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Dust in the Wind",
+    "Blackbird (basis)"
+   ],
+   "description": "Thumb on bass, i m a on G B e.",
+   "type": "pick"
+  },
+  {
+   "id": "travis",
+   "name": "Travis picking",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "steps": [
+    "p",
+    "i",
+    "p2",
+    "m",
+    "p",
+    "i",
+    "p2",
+    "m"
+   ],
+   "difficulty": 3,
+   "songs": [
+    "Dust in the Wind (variant)",
+    "Landslide",
+    "Freight Train"
+   ],
+   "description": "Thumb alternates root and fifth/neighbour bass (E-D or A-D strings) steadily; fingers pluck treble notes in between.",
+   "type": "pick"
+  },
+  {
+   "id": "arp_up",
+   "name": "Simple arpeggio up-down",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "steps": [
+    "p",
+    "i",
+    "m",
+    "a",
+    "m",
+    "i",
+    "m",
+    "a"
+   ],
+   "difficulty": 1,
+   "songs": [
+    "Stand By Me (arp)",
+    "Perfect (arp)"
+   ],
+   "description": "Roll the strings of the chord up then back down.",
+   "type": "pick"
+  },
+  {
+   "id": "six8_arp",
+   "name": "6/8 arpeggio",
+   "time_sig": "6/8",
+   "subdivision": "8th",
+   "steps_per_bar": 6,
+   "beats_per_bar": 2,
+   "step_beats": 0.3333333333333333,
+   "steps": [
+    "p",
+    "i",
+    "m",
+    "a",
+    "m",
+    "i"
+   ],
+   "difficulty": 2,
+   "songs": [
+    "House of the Rising Sun"
+   ],
+   "description": "p i m a m i over a 6/8 bar.",
+   "type": "pick"
+  },
+  {
+   "id": "waltz_pick",
+   "name": "3/4 pick: bass + chord + chord",
+   "time_sig": "3/4",
+   "subdivision": "8th",
+   "steps_per_bar": 3,
+   "beats_per_bar": 3,
+   "step_beats": 1,
+   "steps": [
+    "p",
+    "i+m+a",
+    "i+m+a"
+   ],
+   "difficulty": 1,
+   "songs": [
+    "Norwegian Wood (feel)"
+   ],
+   "description": "Bass note, then two plucked treble chords.",
+   "type": "pick"
+  },
+  {
+   "id": "pinch",
+   "name": "Pinch + arpeggio",
+   "time_sig": "4/4",
+   "subdivision": "8th",
+   "steps_per_bar": 8,
+   "beats_per_bar": 4,
+   "step_beats": 0.5,
+   "steps": [
+    "p+a",
+    "i",
+    "m",
+    "i",
+    "p+a",
+    "i",
+    "m",
+    "i"
+   ],
+   "difficulty": 2,
+   "songs": [
+    "Fast Car",
+    "Landslide (feel)"
+   ],
+   "description": "Thumb and ring finger pinch together on beats 1 and 3.",
+   "type": "pick"
+  }
+ ]
+}
