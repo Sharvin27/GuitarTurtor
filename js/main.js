@@ -221,7 +221,7 @@ function update(dt) {
   const T = now();
   const jumped = lastT === null || Math.abs(T - lastT) > 0.25;
   lastT = T;
-  if (!events.length || !perf) return;
+  if (!perf) return;
   const { st, pressed, anchor } = perf.update(T, dt, jumped);
   chordPanel.update(T);
 

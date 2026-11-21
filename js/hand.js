@@ -175,6 +175,10 @@ export class HandRig {
       hi: [lim.abd[1] * D2R, lim.mcp[1] * D2R, lim.pip[1] * D2R],
       outP: names.map(() => new THREE.Vector3()),
       outQ: names.map(() => new THREE.Quaternion()),
+      // FK runs four times per DLS iteration; keep its scratch separate from the output poses.
+      rotations: names.map(() => new THREE.Quaternion()),
+      work: { J: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], A: new THREE.Matrix3(), a: new Array(9),
+        e: new THREE.Vector3(), tip: new THREE.Vector3(), y: new THREE.Vector3(), t2: [0, 0, 0] },
       err: 0,
     };
   }
@@ -182,15 +186,14 @@ export class HandRig {
   /** forward kinematics; writes chain.outP/outQ (Armature space). returns tip position */
   fk(ch, th) {
     const nb = ch.names.length;
-    const R = [];
-    let cur = new THREE.Quaternion();
+    const R = ch.rotations;
     for (let b = 0; b < nb; b++) {
-      if (b > 0) cur = R[b - 1].clone();
+      const cur = R[b];
+      if (b > 0) cur.copy(R[b - 1]); else cur.identity();
       for (const d of ch.dofs) if (d.bone === b) {
         _q.setFromAxisAngle(d.axis, d.sign * th[d.param] * (d.ratio || 1));
         cur.multiply(_q);
       }
-      R.push(cur);
     }
     ch.outP[0].copy(ch.restP[0]);
     for (let b = 0; b < nb; b++) {
@@ -226,33 +229,30 @@ export class HandRig {
   /** damped least squares IK on 3 params toward target (Armature space) */
   _dls(ch, target, iters = 10) {
     const th = ch.theta, h = 1e-4, lam2 = 0.004 * 0.004;
-    const J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-    let e = new THREE.Vector3();
+    const { J, A, a, e, tip, y, t2 } = ch.work;
     for (let it = 0; it < iters; it++) {
-      const tip = this.fk(ch, th).clone();
+      tip.copy(this.fk(ch, th));
       e.copy(target).sub(tip);
       if (e.lengthSq() < 1e-8) break;
       for (let j = 0; j < 3; j++) {
-        const t2 = th.slice(); t2[j] += h;
+        for (let k = 0; k < 3; k++) t2[k] = th[k];
+        t2[j] += h;
         const p2 = this.fk(ch, t2);
         J[0][j] = (p2.x - tip.x) / h; J[1][j] = (p2.y - tip.y) / h; J[2][j] = (p2.z - tip.z) / h;
       }
       // A = J J^T + lam^2 I ; dθ = J^T A^-1 e
-      const A = new THREE.Matrix3();
-      const a = [];
       for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
-        a.push(J[r][0] * J[c][0] + J[r][1] * J[c][1] + J[r][2] * J[c][2] + (r === c ? lam2 : 0));
+        a[r * 3 + c] = J[r][0] * J[c][0] + J[r][1] * J[c][1] + J[r][2] * J[c][2] + (r === c ? lam2 : 0);
       }
       A.set(...a);
       A.invert();
-      const y = e.clone().applyMatrix3(A);
+      y.copy(e).applyMatrix3(A);
       for (let j = 0; j < 3; j++) {
         th[j] += J[0][j] * y.x + J[1][j] * y.y + J[2][j] * y.z;
         th[j] = Math.min(ch.hi[j], Math.max(ch.lo[j], th[j]));
       }
     }
-    const tip = this.fk(ch, th);
-    ch.err = tip.distanceTo(target);
+    ch.err = this.fk(ch, th).distanceTo(target);
     return ch.err;
   }
 
