@@ -5,7 +5,8 @@
 export const P_MIN = 1, P_MAX = 20;  // pos 20 lets the ring finger take fret 22 (bends)
 
 export function normalizeScore(score) {
-  const sixteenth = 60 / (score.bpm || 120) / 4;
+  const bpm = Number.isFinite(score.bpm) && score.bpm > 0 ? score.bpm : 120;
+  const sixteenth = 60 / bpm / 4;
   const notes = [...score.notes].map(n => ({ ...n })).sort((a, b) => a.t - b.t || (a.q ?? 0) - (b.q ?? 0));
   // data repair: two onsets on the same string at (almost) the same time are physically impossible.
   // Re-time the earlier one (by beat position q) between its neighbours.
@@ -19,16 +20,17 @@ export function normalizeScore(score) {
   }
   const out = notes.map((n, i) => {
     const next = notes[i + 1];
-    let dur = Math.max(0.08, (n.d || 2) * sixteenth);
+    const dur = Math.max(0.08, (Number.isFinite(n.d) && n.d > 0 ? n.d : 2) * sixteenth);
     return {
-      t: n.t, dur, q: n.q, sec: n.sec || '',
+      // Share the tab strip's tempo fallback with picking and harmony; keep authored beats intact.
+      t: n.t, dur, q: Number.isFinite(n.q) ? n.q : (n.t - notes[0].t) * bpm / 60, sec: n.sec || '',
       notes: n.n.map(([s, f]) => ({ s, f })),
       slide: !!n.slide, bend: n.bend || 0, hb: n.hb || 0, rel: !!n.rel, vib: !!n.vib,
       ham: !!n.ham, pull: !!n.pull, pm: !!n.pm,
       gap: next ? next.t - n.t : 1,
     };
   });
-  out.bpm = score.bpm || 120;
+  out.bpm = bpm;
   return out;
 }
 

@@ -10,6 +10,8 @@ import { HAND_LEFT, HAND_RIGHT } from './hand-assets.js';
 import { renderSong } from './synth.js';
 import { initChords } from './chords-mode.js';   // Chords practice mode: progression, strum pattern, diagrams (js/chords-mode.js)
 import { initLearn } from './learn.js';   // tab strip, lesson markers, hands toggle, lesson cam (js/learn.js)
+import { ChordPanel } from './chordpanel.js';
+import { loadSongAudio, shiftScore } from './song-audio.js';
 
 let SONGS = {};   // filled from data/songs.json (written by the tab-viewer build)
 const FINGER_COLORS = [0x4cc9f0, 0x80ed99, 0xffd166, 0xef476f];
@@ -78,6 +80,7 @@ const pickMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(pickShape, { depth: 0.
 pickMesh.visible = false;
 guitar.add(pickMesh);
 const learn = initLearn({ guitar, camera, controls, now: () => now(), seek: t => seek(t), hands: () => [left, right], pickMesh, markers, resize: () => resize() });
+const chordPanel = new ChordPanel();   // implied chord + diagram (js/harmony.js, chords/chord_shapes.json)
 
 const chords = initChords({
   now: () => now(), seek: t => seek(t), isPlaying: () => playing, setPlaying: p => setPlaying(p),
@@ -91,7 +94,11 @@ let left = null, right = null, perf = null;
 const audio = new Audio();
 audio.preload = 'auto';
 audio.addEventListener('error', () => { if (audio.src) { audioOK = false; setStatus('Audio failed to load: animating on internal clock'); } });
-audio.addEventListener('loadedmetadata', () => { duration = Math.max(duration, audio.duration || 0); ui.scrub.max = duration; });
+audio.addEventListener('loadedmetadata', () => {
+  // MediaRecorder WebM may report Infinity; keep the decoded duration in that case.
+  if (Number.isFinite(audio.duration)) duration = Math.max(duration, audio.duration);
+  ui.scrub.max = duration;
+});
 audio.addEventListener('ended', () => setPlaying(false));
 
 // the original Short in a small floating player (only where js/yt.js is loaded, i.e. the GitHub Pages build)
@@ -118,7 +125,7 @@ for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'input', '
 document.addEventListener('visibilitychange', () => poke());
 { const m = THREE.DefaultLoadingManager, prev = m.onLoad; m.onLoad = (...a) => { poke(); if (prev) prev(...a); }; m.onProgress = () => poke(); }
 const setText = (el, s) => { if (el.textContent !== s) el.textContent = s; };
-let sourceReady = false, pendingPlay = false;
+let sourceReady = false, pendingPlay = false, songLoad = 0;
 function setUi(p) {
   playing = p;
   poke();
@@ -157,6 +164,7 @@ async function loadChordSong(cs) {
 
 async function loadSong(key) {
   chordLoad++; chords.deactivate();
+  const load = ++songLoad;
   const song = SONGS[key];
   songKey = key;
   ui.song.value = key;
@@ -164,23 +172,29 @@ async function loadSong(key) {
   setPlaying(false);
   sourceReady = false; pendingPlay = false; setUi(false);
   setStatus('Loading ' + song.label + '…');
-  const score = song.score || await (await fetch(song.data)).json();   // user songs (js/user-songs.js) carry their score
+  let score = song.score || await (await fetch(song.data)).json();   // user songs (js/user-songs.js) carry their score
+  const recording = song.user ? await loadSongAudio(key) : null;
+  if (load !== songLoad) return;
+  if (recording) score = shiftScore(score, -(song.audioOffset || 0));
   events = prepareTimeline(solveFingering(normalizeScore(score)), song.mode);
   if (perf) perf.setEvents(events);
   learn.setEvents(events);
+  try { chordPanel.setScore(score, events); } catch (e) { console.warn('harmony', e); chordPanel.setSegments([]); }
   duration = events.length ? events[events.length - 1].t + 2 : 1;
+  if (recording && Number.isFinite(song.audioDuration) && song.audioDuration > 0) duration = song.audioDuration;
   ui.scrub.max = duration;
   const shifts = events.reduce((a, e, i) => a + (i && e.pos !== events[i - 1].pos ? 1 : 0), 0);
   const summary = `${events.length} notes · ${shifts} position shifts · ${Math.round(score.bpm)} bpm · ${song.mode === 'pick' ? 'pick' : 'p-i-m-a'}`;
-  // 1) the original recording, if it's next to the page; 2) the original YouTube Short; 3) the tab rendered by the guitar synth
-  let src = null, source = 'recording';
+  // Saved audio first, then hosted audio, YouTube, and finally the guitar synth.
+  let src = recording ? URL.createObjectURL(recording) : null, source = recording ? 'file' : 'recording';
   ytActive = false;
-  if (song.audio) try { const r = await fetch(song.audio, { method: 'HEAD' }); if (r.ok) src = song.audio; } catch (e) { /* not hosted */ }
+  if (!src && song.audio) try { const r = await fetch(song.audio, { method: 'HEAD' }); if (r.ok) src = song.audio; } catch (e) { /* not hosted */ }
+  if (load !== songLoad) return;
   if (!src && yt && song.video) {
     setStatus('Loading the original video…');
     try {
       await yt.load(song.video, song.label);
-      if (songKey !== key) return;
+      if (load !== songLoad) return;
       audio.pause(); audioOK = false; ytActive = true;
       yt.setRate(parseFloat(ui.rate.value)); seek(0);
       setStatus(`${summary} · sound: original video (YouTube)`);
@@ -188,15 +202,17 @@ async function loadSong(key) {
       return;
     } catch (e) { console.warn(e); }
   }
+  if (load !== songLoad) return;
   if (yt && !ytActive) yt.hide();
   if (!src) {
     setStatus('Generating guitar sound from the tab…');
     try {
       const blob = await renderSong(normalizeScore(score), song.mode, duration + 1.5);
-      if (songKey !== key) return;
+      if (load !== songLoad) return;
       src = URL.createObjectURL(blob); source = 'synth';
     } catch (e) { console.error(e); }
   }
+  if (load !== songLoad) return;
   setAudio(src, source, summary);
   sourceIsReady();
 }
@@ -245,8 +261,9 @@ function update(dt) {
   const T = now();
   const jumped = lastT === null || Math.abs(T - lastT) > 0.25;
   lastT = T;
-  if (!events.length || !perf) return;
+  if (!perf) return;
   const { st, pressed, anchor } = perf.update(T, dt, jumped);
+  chordPanel.update(T);
 
   // strings: pressed geometry from the actual fingertips, glow + vibration while sounding
   const glow = [0, 0, 0, 0, 0, 0];
@@ -374,7 +391,7 @@ camera.position.copy(start).add(camOffset);
   try {
     const list = await (await fetch('data/songs.json')).json();
     // songs made in create.html and kept in this browser
-    try { for (const s of (window.UserSongs ? window.UserSongs.list() : [])) if (s.score && s.score.notes && s.score.notes.length && !list.some(x => x.id === s.id)) list.push({ id: s.id, label: s.title + ' ★ (yours)', score: s.score, video: s.video || null, mode: s.mode || 'fingers' }); } catch (e) { console.warn(e); }
+    try { for (const s of (window.UserSongs ? window.UserSongs.list() : [])) if (s.score && s.score.notes && s.score.notes.length && !list.some(x => x.id === s.id)) list.push({ id: s.id, label: s.title + ' ★ (yours)', score: s.score, user: true, audioOffset: s.audioOffset || 0, audioDuration: s.audioDuration, video: s.video || null, mode: s.mode || 'fingers' }); } catch (e) { console.warn(e); }
     SONGS = Object.fromEntries(list.map(x => [x.id, x]));
     for (const x of list) ui.song.add(new Option(x.label, x.id));
     const want = location.hash.slice(1);

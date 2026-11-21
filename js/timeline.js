@@ -13,6 +13,7 @@ export const PRESS_Y = FRET_H + 0.0022;   // fingertip joint height when the str
 const HOVER = 0.007, HOVER_COUPLED = 0.0035, REST = 0.018;
 const BEND_PER_SEMI = 0.0026;             // lateral string push per semitone (m)
 const HOVER_DEFAULT = [3, 2, 2, 1];
+const EMPTY_PLUCKS = { thumb: [], index: [], middle: [], ring: [], pick: [] };
 
 const clamp01 = x => Math.max(0, Math.min(1, x));
 const smooth = x => { x = clamp01(x); return x * x * (3 - 2 * x); };
@@ -86,7 +87,15 @@ export function bendOffset(e, n, T) {
  */
 export function sample(events, T) {
   const out = { pos: events.length ? events[0].pos : 5, focus: null, targets: {}, right: {}, sounding: [], upcoming: [], now: -1 };
-  if (!events.length) return out;
+  if (!events.length) {
+    // A cleared score still needs valid rest targets so the previous pose can release.
+    FINGER_KEYS.forEach((key, k) => {
+      const x = contactX(out.pos + k);
+      out.targets[key] = { x, y: stringY(x) + REST, z: stringZ(HOVER_DEFAULT[k], x), press: false, note: null };
+    });
+    out.right = sampleRight(events, T);
+    return out;
+  }
   const i = lastLE(events, T, e => e.t - e.lead);
   const iH = lastLE(events, T, e => e.t - e.leadH);
   const iNow = lastLE(events, T, e => e.t);
@@ -193,8 +202,7 @@ const RIGHT_HOME = { thumb: 4, index: 2, middle: 1, ring: 0 };
 const RIGHT_DX = { thumb: -0.03, index: -0.008, middle: 0.002, ring: 0.012 };
 
 function sampleRight(events, T) {
-  const P = events.plucks, res = {};
-  if (!P) return res;
+  const P = events.plucks || EMPTY_PLUCKS, res = {};
   if (events.mode === 'pick') {
     const list = P.pick;
     const CROSS = 0.008;                                 // pick starts crossing slightly before the onset

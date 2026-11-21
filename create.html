@@ -51,9 +51,41 @@
   ul.mine a { color: var(--blue); font-size: 14px; }
   ul.mine button { font-size: 13px; padding: 4px 10px; }
   code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+  .check { display: flex; align-items: center; gap: 8px; }
+  .check input { width: auto; }
   input[type=file] { padding: 8px; }
 </style>
-<link rel="modulepreload" href="js/songmaker.js?v=86df2f04b1">
+<script type="importmap">
+{
+  "imports": {
+    "./js/audio-chords.js": "./js/audio-chords.js?v=5e6a940615",
+    "./js/chord-agreement.js": "./js/chord-agreement.js?v=084f95c378",
+    "./js/chordpanel.js": "./js/chordpanel.js?v=3c997c3bd6",
+    "./js/fingering.js": "./js/fingering.js?v=f432b99663",
+    "./js/guitar.js": "./js/guitar.js?v=b2035c0bb4",
+    "./js/hand-assets.js": "./js/hand-assets.js?v=734fe538b3",
+    "./js/hand.js": "./js/hand.js?v=12a1c35fad",
+    "./js/harmony.js": "./js/harmony.js?v=c706b78929",
+    "./js/learn.js": "./js/learn.js?v=2d95b0b374",
+    "./js/main.js": "./js/main.js?v=5c4e9e99f6",
+    "./js/markers.js": "./js/markers.js?v=3e79f88c05",
+    "./js/performer.js": "./js/performer.js?v=c481f18390",
+    "./js/song-audio.js": "./js/song-audio.js?v=bebed89fbe",
+    "./js/songmaker.js": "./js/songmaker.js?v=853b4fb3f6",
+    "./js/subdivide.js": "./js/subdivide.js?v=94d1f9485e",
+    "./js/synth.js": "./js/synth.js?v=2f513eadac",
+    "./js/tabstrip.js": "./js/tabstrip.js?v=93e7f68297",
+    "./js/theory.js": "./js/theory.js?v=c9eb754cfc",
+    "./js/timeline.js": "./js/timeline.js?v=0698ba9c14",
+    "./chords/chordnamer.js": "./chords/chordnamer.js?v=7a98aa55ed"
+  }
+}
+</script>
+<link rel="modulepreload" href="js/songmaker.js?v=853b4fb3f6">
+<link rel="modulepreload" href="js/chord-agreement.js?v=084f95c378">
+<link rel="modulepreload" href="chords/chordnamer.js?v=7a98aa55ed">
+<link rel="modulepreload" href="js/song-audio.js?v=bebed89fbe">
+<link rel="modulepreload" href="js/audio-chords.js?v=5e6a940615">
 </head>
 <body>
 <main>
@@ -95,6 +127,7 @@
       <label for="offset">Audio starts at video time (s)<input id="offset" type="number" step="0.01" value="0"></label>
     </div>
     <p class="status" id="audMsg">No audio yet.</p>
+    <label class="check"><input id="autoOpen" type="checkbox" checked>Open the 3D lesson when done</label>
     <button id="go" type="button" disabled>Write the tab</button>
     <div class="bar" id="bar" hidden><i></i></div>
   </section>
@@ -121,9 +154,11 @@
 <script src="js/yt.js?v=080657586f"></script>
 <script src="js/user-songs.js?v=48d8d05ec1"></script>
 <script type="module">
-import { decodeAudio, transcribe, toScore } from './js/songmaker.js?v=86df2f04b1';
+import { decodeAudio, transcribe, toScore, loadChordShapes, reconcileChords } from './js/songmaker.js';
+import { saveSongAudio, deleteSongAudio, shiftScore } from './js/song-audio.js';
+import { detectAudioChords } from './js/audio-chords.js';
 const $ = id => document.getElementById(id);
-let yt = null, videoId = '', audioBlob = null, audioLabel = '', last = null, rec = null;
+let yt = null, videoId = '', audioBlob = null, audioLabel = '', last = null, rec = null, busy = false;
 
 const msg = (el, text, cls = '') => { $(el).textContent = text; $(el).className = 'status ' + cls; };
 const ytId = s => { s = s.trim(); const m = s.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})/); return m ? m[1] : /^[\w-]{11}$/.test(s) ? s : ''; };
@@ -158,34 +193,53 @@ $('file').onchange = e => { const f = e.target.files[0]; if (f) setAudio(f, f.na
 function record(stream, btn, label, onStart) {
   const tracks = stream.getAudioTracks();
   if (!tracks.length) { stream.getTracks().forEach(t => t.stop()); throw new Error('No audio was shared. Choose this tab and turn on “Share tab audio”.'); }
-  const mr = new MediaRecorder(new MediaStream(tracks)), chunks = [], old = btn.textContent;
+  let mr;
+  try { mr = new MediaRecorder(new MediaStream(tracks)); }
+  catch (e) { stream.getTracks().forEach(t => t.stop()); throw e; }
+  const chunks = [], old = btn.textContent;
+  $('go').disabled = true; $('file').disabled = true;
+  $('mic').disabled = btn !== $('mic'); $('cap').disabled = btn !== $('cap');
   mr.ondataavailable = e => e.data.size && chunks.push(e.data);
   mr.onstart = () => onStart && onStart();
   const stop = () => { if (mr.state !== 'inactive') mr.stop(); };
-  mr.onstop = () => {
+  mr.onstop = async () => {
     stream.getTracks().forEach(t => t.stop()); btn.textContent = old; btn.classList.remove('rec'); rec = null;
-    if (chunks.length) setAudio(new Blob(chunks, { type: mr.mimeType }), label + ' (' + new Date().toLocaleTimeString() + ')', rec_offset);
+    if (yt) yt.pause();
+    setBusy(false);
+    if (chunks.length) {
+      setAudio(new Blob(chunks, { type: mr.mimeType }), label + ' (' + new Date().toLocaleTimeString() + ')', rec_offset);
+      await writeTab();
+    } else msg('audMsg', 'No audio was recorded. Please try again.', 'err');
   };
-  tracks[0].onended = stop;                      // user pressed Chrome's "Stop sharing"
+  stream.getTracks().forEach(t => { t.onended = stop; }); // Chrome's "Stop sharing" may end the video track first.
   btn.textContent = 'Stop'; btn.classList.add('rec');
-  mr.start(1000);
+  try { mr.start(1000); }
+  catch (e) {
+    stream.getTracks().forEach(t => t.stop()); btn.textContent = old; btn.classList.remove('rec');
+    setBusy(false); throw e;
+  }
   rec = { stop, btn };
 }
 let rec_offset = 0;
 
 $('mic').onclick = async () => {
+  if (busy) return;
   if (rec) return rec.stop();
+  setBusy(true);
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser can’t record the microphone.');
     const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
     rec_offset = 0;
+    setBusy(false);
     record(s, $('mic'), 'Microphone recording');
     msg('audMsg', 'Recording the microphone… press Stop when done.');
-  } catch (e) { msg('audMsg', 'Microphone: ' + e.message, 'err'); }
+  } catch (e) { setBusy(false); msg('audMsg', 'Microphone: ' + e.message, 'err'); }
 };
 
 $('cap').onclick = async () => {
+  if (busy) return;
   if (rec) return rec.stop();
+  setBusy(true);
   try {
     if (!yt || !yt.ready) throw new Error('Load the YouTube video first (step 1).');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('This browser can’t capture tab audio. Use Chrome on a computer, or upload a file.');
@@ -193,6 +247,7 @@ $('cap').onclick = async () => {
     const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, preferCurrentTab: true, selfBrowserSurface: 'include' });
     // time alignment: audio t = 0 is when the recorder starts; once the video is playing, map back to video time
     let t0 = 0;
+    setBusy(false);
     record(s, $('cap'), 'Captured video audio', () => {
       t0 = performance.now(); rec_offset = yt.time();
       yt.play(yt.time(), 1);
@@ -202,36 +257,52 @@ $('cap').onclick = async () => {
       }, 50);
     });
     msg('audMsg', 'Capturing… the video plays now. Press Stop when the part you want is over.');
-  } catch (e) { msg('audMsg', 'Capture: ' + e.message, 'err'); }
+  } catch (e) { setBusy(false); msg('audMsg', 'Capture: ' + e.message, 'err'); }
 };
 
 const bar = f => { $('bar').hidden = false; $('bar').firstChild.style.width = Math.round(100 * Math.max(0, Math.min(1, f))) + '%'; };
-$('go').onclick = async () => {
-  if (!audioBlob) return;
-  $('go').disabled = true; $('result').hidden = true;
+function setBusy(value) {
+  busy = value;
+  for (const id of ['file', 'mic', 'cap', 'model', 'offset', 'loadVid', 'url']) $(id).disabled = value;
+  $('go').disabled = value || !audioBlob;
+}
+async function writeTab() {
+  if (!audioBlob || busy || rec) return;
+  setBusy(true); $('result').hidden = true;
+  const blob = audioBlob, offset = parseFloat($('offset').value) || 0;
   try {
     msg('audMsg', 'Decoding the audio…'); bar(0);
-    const y = await decodeAudio(audioBlob);
+    const y = await decodeAudio(blob);
     const { notes, engine } = await transcribe(y, { engine: $('model').value, progress: (f, t) => { bar(f); msg('audMsg', t); } });
-    const score = toScore(notes, parseFloat($('offset').value) || 0);
+    const shapes = await loadChordShapes();
+    const localScore = toScore(notes, 0, 0.75, shapes);
+    msg('audMsg', 'Listening for chords…'); bar(0);
+    localScore.chords = reconcileChords(await detectAudioChords(y, { progress: bar }), localScore.notes);
+    const score = shiftScore(localScore, offset);
     const title = $('name').value.trim() || audioLabel.replace(/\.\w+$/, '') || 'My song';
-    const id = 'u-' + slug(title) + '-' + Date.now().toString(36).slice(-4);
-    last = { id, title, artist: 'you', kind: 'Auto tab (' + engine + ')', label: title, video: videoId, mode: 'fingers',
+    const id = 'u-' + slug(title) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    last = { id, title, artist: 'you', kind: 'Auto tab (' + engine + ')', label: title, video: videoId, mode: score.notes.some(n => n.n.length >= 3) ? 'pick' : 'fingers',
+      audioOffset: offset, audioDuration: y.length / 22050,
       duration: +(score.notes[score.notes.length - 1].t + 2).toFixed(2), engine, created: new Date().toISOString(), score };
     const saved = UserSongs.save(last);
+    const audioSaved = saved && await saveSongAudio(id, blob);
     $('bar').hidden = true;
     msg('audMsg', `Done with ${engine}.`, 'ok');
     $('resMsg').textContent = `“${title}”: ${score.notes.length} notes, ♩ ≈ ${Math.round(score.bpm)}` + (saved ? ' · saved in this browser' : ' · could not save here (storage blocked): download the JSON');
     $('resMsg').className = 'status ' + (saved ? 'ok' : 'err');
     $('openTab').href = 'tabs.html#' + id; $('open3d').href = 'index.html#' + id;
+    if (saved && !audioSaved) $('resMsg').textContent += ' · recording could not be saved; playback will use video or synth';
+    $('openTab').hidden = $('open3d').hidden = !saved;
     $('result').hidden = false; showMine();
+    if (saved && $('autoOpen').checked) location.assign('index.html#' + id);
   } catch (e) { console.error(e); msg('audMsg', 'Transcription failed: ' + e.message, 'err'); }
-  $('go').disabled = false;
-};
+  finally { $('bar').hidden = true; setBusy(false); }
+}
+$('go').onclick = writeTab;
 
 function download(song) {
   const { score, ...meta } = song;
-  const blob = new Blob([JSON.stringify({ ...meta, bpm: score.bpm, grid: score.grid, notes: score.notes })], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ ...meta, ...score })], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = song.id + '.json';
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
@@ -246,7 +317,13 @@ function showMine() {
     li.querySelector('span').textContent = `${s.title} · ${s.score.notes.length} notes`;
     const dl = document.createElement('button'); dl.className = 'secondary'; dl.textContent = 'JSON'; dl.onclick = () => download(s);
     const rm = document.createElement('button'); rm.className = 'secondary'; rm.textContent = 'Delete';
-    rm.onclick = () => { if (confirm(`Delete “${s.title}” from this browser?`)) { UserSongs.remove(s.id); showMine(); } };
+    rm.onclick = async () => { if (confirm(`Delete “${s.title}” from this browser?`)) {
+      if (UserSongs.remove(s.id)) {
+        const removed = await deleteSongAudio(s.id);
+        if (!removed) msg('audMsg', 'Tab deleted; audio deletion could not be confirmed because recording storage is unavailable.', 'err');
+        showMine();
+      } else msg('audMsg', 'Could not delete this song: storage is blocked.', 'err');
+    } };
     li.append(dl, rm); $('mine').appendChild(li);
   }
 }
