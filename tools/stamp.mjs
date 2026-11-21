@@ -25,7 +25,8 @@ const THREE_PRELOAD = [   // what main.js pulls from the CDN (three r160)
   'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js',
 ];
 
-const hash = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 10);
+// hash the text with LF line endings, so Windows (CRLF checkout) and macOS/Linux get the same hash
+const hash = f => crypto.createHash('sha256').update(fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n')).digest('hex').slice(0, 10);
 const files = fs.readdirSync(JS).filter(f => f.endsWith('.js'));
 const H = Object.fromEntries(files.map(f => [f, hash(path.join(JS, f))]));
 const isModule = f => /^\s*(import|export)\s/m.test(fs.readFileSync(path.join(JS, f), 'utf8'));
