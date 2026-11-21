@@ -19,6 +19,7 @@ const smooth = x => { x = clamp01(x); return x * x * (3 - 2 * x); };
 
 export function prepareTimeline(events, mode = 'fingers') {
   events.forEach((ev, i) => {
+    ev.i = i;                      // own index, so sample() never has to search for it
     const prev = events[i - 1];
     const gapPrev = prev ? ev.t - prev.t : 1;
     ev.legato = prev ? (prev.slide ? 'slide' : prev.ham ? 'ham' : prev.pull ? 'pull' : null) : null;
@@ -96,7 +97,7 @@ export function sample(events, T) {
   out.pos = evH.pos;
   out.evH = evH;
   // during a slide the hand travels with the finger
-  const slideStart = e => e.t + 0.35 * Math.min(e.dur, (events[events.indexOf(e) + 1]?.t ?? e.t + e.dur) - e.t);
+  const slideStart = e => e.t + 0.35 * Math.min(e.dur, (events[e.i + 1]?.t ?? e.t + e.dur) - e.t);
   if (ev && ev.slide && next && T > slideStart(ev)) out.pos = next.pos;
   if (evH.fretted.length) out.focus = evH.fretted.reduce((a, n) => a + n.s, 0) / evH.fretted.length;
   const pos = ev ? (ev.slide && next && T > slideStart(ev) ? next.pos : ev.pos) : events[0].pos;
@@ -106,7 +107,7 @@ export function sample(events, T) {
     let x = contactX(n.f), f = n.f;
     // slide: glide along the string toward the next note without lifting
     if (e.slide) {
-      const nx = events[events.indexOf(e) + 1];
+      const nx = events[e.i + 1];
       const nn = nx && nx.notes.find(m => m.s === n.s);
       if (nn && nn.f > 0) {
         const d = Math.min(e.dur, nx.t - e.t);

@@ -7,6 +7,7 @@
   "scripts": {
     "selfcheck": "node tools/selfcheck.mjs",
     "strumcheck": "node tools/strumcheck.mjs",
+    "stamp": "node tools/stamp.mjs",
     "serve": "npx --yes http-server@14.1.1 -c-1 -p 8080 ."
   },
   "devDependencies": {
