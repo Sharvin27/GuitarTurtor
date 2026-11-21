@@ -12,7 +12,13 @@ export const LEFT = {
   alpha: 12 * D2R,                    // finger direction tilt out of the fingerboard plane
   ky: 0.025,                          // knuckle height above the fingerboard
   kz: focus => 0.035 - 0.006 * focus, // knuckle distance beyond the treble edge, by string focus
+  // wrist: the palm frame turns about the knuckle line instead of staying rigid. Ranges come from MediaPipe
+  // hand poses on a realistic reference clip (frets 12-22, see PLAN.md "Wrist data"): palm-direction yaw
+  // median +2 deg (p10..p90 -8..+5), roll about the finger axis median -2 deg (p10..p90 -10..+9).
+  yaw: fret => Math.max(-3, Math.min(5, 0.35 * (fret - 5))) * D2R,      // fingers lean toward the bridge up the neck
+  roll: focus => Math.max(-8, Math.min(8, WRIST.rollK * (focus - 1.5))) * D2R, // hand rolls as the fingers reach the bass strings
 };
+export const WRIST = { on: true, rollK: -2.5 };   // deg of roll per string of reach (sign picked by the self-check: -2.5 and 0 tie, +4 is worse)
 // picking-hand placement (fitted offline, see tools/selfcheck.mjs --fit-right)
 export const RIGHT = { beta: 35 * D2R, yaw: 25 * D2R, dx: 0.0, ky: 0.06, kz: -0.015 };
 export const rightAxes = () => ({
@@ -53,7 +59,14 @@ export class Performer {
 
     const L = this.left;
     if (L) {
-      L.setPlacement(this.anchor, new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, Math.sin(LEFT.alpha), Math.cos(LEFT.alpha)));
+      const lH = new THREE.Vector3(-1, 0, 0), fH = new THREE.Vector3(0, Math.sin(LEFT.alpha), Math.cos(LEFT.alpha));
+      if (WRIST.on) {
+        const fret = -12 * Math.log2(Math.max(1e-3, 1 - anchorX / 0.648));
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), LEFT.yaw(fret));
+        lH.applyQuaternion(qYaw); fH.applyQuaternion(qYaw);
+        lH.applyAxisAngle(fH, LEFT.roll(focus));
+      }
+      L.setPlacement(this.anchor, lH, fH);
       const goals = {};
       for (const k of FINGER_KEYS) {
         const g = st.targets[k];

@@ -85,11 +85,12 @@ Status: ✅ done in the prototype · ◐ partial · ☐ not started.
 | **P0-4** | **Sync.** `audio.currentTime` is the master clock (audio loaded as a Blob so seeking works on any static host); play/pause, scrubber, 0.5×/0.75× speed, both songs selectable | 1 h | ✅ |
 | **P0-5** | **Self-check** (`tools/selfcheck.mjs`): simulates the exact page code at 60 fps and logs fingertip-to-target distance at every onset | 1 h | ✅ |
 | P0-6 | Procedural neck (22 frets, tapered strings, inlays), MIT generic hands, forearms anchored to elbow points, orbit camera following the fretting hand, camera presets | 3 h | ✅ |
-| P1 | Wrist/forearm IK (elbow + wrist flexion) instead of a rigid palm frame; hand roll/yaw with position (low frets fan the fingers) | 3 h | ☐ |
+| P1 | Wrist/forearm IK (elbow + wrist flexion) instead of a rigid palm frame; hand roll/yaw with position (low frets fan the fingers) | 3 h | ◐ palm yaw by fret + roll by string focus from real-hand data (see Wrist data); no elbow/wrist-flexion IK yet |
 | P1 | Finger-pad contact model: target the pad (not the tip joint), flatten the pad on press, nail-side clearance from adjacent strings (avoid muting) | 2 h | ☐ |
 | P1 | Barre detection for chords (index flattens across strings) and shared-fret two-finger cases | 2 h | ☐ |
 | P1 | Pick hand: wrist rotation stroke instead of translation; palm mute (`pm`) resting the palm on the bridge; pick depth by stroke velocity | 2 h | ☐ |
-| P1 | Latency offset slider; 2D tab strip under the 3D view (reuse tab-viewer rendering) | 1.5 h | ☐ |
+| P1 | Latency offset slider; 2D tab strip under the 3D view (reuse tab-viewer rendering) | 1.5 h | ◐ tab strip ✅ (js/tabstrip.js), latency slider ☐ |
+| **L1** | **Learning layer** (`js/learn.js`, `js/tabstrip.js`, `js/markers.js`, `js/theory.js`): scrolling tab strip with finger-coloured numbers, technique symbols, bars/sections, fixed playhead, click-to-seek/drag-to-scrub; target rings + approaching ghost rings + onset pings; slide trail, hammer-on H + down pulse, pull-off P + flick, bend/held-bend/release arrows, vibrato wave, pluck pulse; string names at the nut and beside the hand (lit when sounding), fret numbers on the bass edge; note names (G#4) on sounding notes; chord/octave/power-chord names in the HUD; Hands on/off (localStorage), Lesson cam, H = recording view | 1 d | ✅ |
 | P2 | Learned or mocap pose prior (Xu & Wang 2024 mocap, licence permitting) to make idle-finger shapes and hand roll look human | 1–2 d | ☐ |
 | P2 | Electric body model option, wood/skin textures (CC0) | 2 h | ☐ |
 
@@ -98,11 +99,38 @@ Status: ✅ done in the prototype · ◐ partial · ☐ not started.
 | Song | Fretting notes | mean / max fingertip error | Plucks | mean / max picking contact error |
 |---|---|---|---|---|
 | Choo Lo (p-i-m-a) | 80 | 0.10 / 0.48 mm | 160 | 2.03 / 2.04 mm (the finger is planted 2.2 mm beside the string by design) |
-| Rabba (pick) | 86 | 0.31 / 2.81 mm | 78 | 2.07 / 8.73 mm (2 strokes over 3 mm: one 60 fps frame is about 6 mm of stroke travel) |
+| Rabba (pick) | 79 | 0.30 / 3.09 mm (0.34 before the wrist yaw/roll) | 78 | 2.07 / 8.73 mm (2 strokes over 3 mm: one 60 fps frame is about 6 mm of stroke travel) |
 
-Run it with `node --import <hook that maps 'three' to three@0.160.0> tools/selfcheck.mjs` (`--fit-right` refits the
+Run it with `npm run selfcheck` (or `node tools/selfcheck.mjs`) (`--fit-right` refits the
 picking-hand placement).
 
 ## Data notes
 - `score.json` (Rabba) has two pairs of same-string onsets at identical `t` (11.436 s, 19.598 s) with different `q`.
   `normalizeScore` re-times the earlier one by its beat position between its neighbours. The source is unchanged.
+
+## Wrist data (real-hand poses, MediaPipe)
+Source: the Higgsfield render of real hands playing Rabba bars 7–11 (frets ~12–22, frontal camera that cuts between
+shots), 204 frames at 30 fps. Script: `tools/wrist_pose.py` (run with `handtrack`'s venv; MediaPipe
+HandLandmarker world landmarks). The neck axis comes from a robust line fit to the maple fretboard's top edge in each
+frame; the hand frame (palm direction wrist→middle MCP, lateral axis pinky MCP→index MCP) is expressed in guitar3d
+axes (x along the neck toward the bridge, y out of the board toward the camera, z toward the low E).
+
+| quantity (frets 12–22) | median | p10 … p90 | guitar3d before |
+|---|---|---|---|
+| palm yaw (palm direction leaning toward the bridge) | +2° | −8 … +5° | 0° (rigid) |
+| roll about the finger axis (index knuckle raised) | −2° | −10 … +9° | 0° |
+| lateral-axis yaw vs the neck | +1° | −5 … +6° | 0° |
+| palm pitch out of the board plane | 48° | 43 … 51° | 12° (`LEFT.alpha`) — MediaPipe depth is weak, not used |
+| MCP flexion index / middle / ring / pinky | 43 / 43 / 54 / 53° | 34–60° | solved by IK |
+| PIP flexion index / middle / ring / pinky | 56 / 50 / 42 / 30° | 19–72° | solved by IK |
+| DIP flexion index | 27° (≈0.5·PIP) | 12–35° | 0.66·PIP |
+
+Findings: on average the real palm frame is close to the rig's (yaw and roll within a few degrees), but it varies by
+about ±8–10° within a passage. Absolute fret position per frame could not be measured reliably (the camera cuts and the
+board's body end is often hidden), so the fret dependence is not fitted from this clip; the 15 frames with a usable fret
+estimate suggest yaw grows with fret (+1.7°/fret, r = 0.8, too few frames to trust).
+Implemented (bounded, `js/performer.js`): `LEFT.yaw(fret)` = 0.35°/fret above fret 5, clamped −3…+5°, and
+`LEFT.roll(focus)` = −2.5° per string of reach toward the bass side, clamped ±8° (sign chosen by the self-check; +4°
+was worse). Self-check: Choo Lo unchanged 0.10 / 0.48 mm, Rabba mean 0.34 → 0.30 mm, max 3.09 mm unchanged.
+The real DIP/PIP ratio (~0.5) is lower than the rig's 0.66; not changed because the IK fit depends on it.
+Next: a separate wrist bone (flexion/deviation) between forearm and palm, and fit pitch from a clip with a side view.

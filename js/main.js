@@ -8,6 +8,7 @@ import { HandRig } from './hand.js';
 import { Performer } from './performer.js';
 import { HAND_LEFT, HAND_RIGHT } from './hand-assets.js';
 import { renderSong } from './synth.js';
+import { initLearn } from './learn.js';   // tab strip, lesson markers, hands toggle, lesson cam (js/learn.js)
 
 let SONGS = {};   // filled from data/songs.json (written by the tab-viewer build)
 const FINGER_COLORS = [0x4cc9f0, 0x80ed99, 0xffd166, 0xef476f];
@@ -75,6 +76,7 @@ const pickMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(pickShape, { depth: 0.
   new THREE.MeshStandardMaterial({ color: 0xff6a3d, roughness: 0.4 }));
 pickMesh.visible = false;
 guitar.add(pickMesh);
+const learn = initLearn({ guitar, camera, controls, now: () => now(), seek: t => seek(t), hands: () => [left, right], pickMesh, markers, resize: () => resize() });
 
 // ---------- state ----------
 let events = [], duration = 1, songKey = 'choo-lo';
@@ -121,9 +123,10 @@ async function loadSong(key) {
   setPlaying(false);
   sourceReady = false; pendingPlay = false; setUi(false);
   setStatus('Loading ' + song.label + '…');
-  const score = await (await fetch(song.data)).json();
+  const score = song.score || await (await fetch(song.data)).json();   // user songs (js/user-songs.js) carry their score
   events = prepareTimeline(solveFingering(normalizeScore(score)), song.mode);
   if (perf) perf.setEvents(events);
+  learn.setEvents(events);
   duration = events.length ? events[events.length - 1].t + 2 : 1;
   ui.scrub.max = duration;
   const shifts = events.reduce((a, e, i) => a + (i && e.pos !== events[i - 1].pos ? 1 : 0), 0);
@@ -131,7 +134,7 @@ async function loadSong(key) {
   // 1) the original recording, if it's next to the page; 2) the original YouTube Short; 3) the tab rendered by the guitar synth
   let src = null, source = 'recording';
   ytActive = false;
-  try { const r = await fetch(song.audio, { method: 'HEAD' }); if (r.ok) src = song.audio; } catch (e) { /* not hosted */ }
+  if (song.audio) try { const r = await fetch(song.audio, { method: 'HEAD' }); if (r.ok) src = song.audio; } catch (e) { /* not hosted */ }
   if (!src && yt && song.video) {
     setStatus('Loading the original video…');
     try {
@@ -271,6 +274,7 @@ function frame(t) {
   const dt = Math.min(0.1, Math.max(0, (t - prevFrame) / 1000));
   prevFrame = t;
   update(dt);
+  learn.update(now());
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -316,6 +320,8 @@ camera.position.copy(start).add(camOffset);
 (async () => {
   try {
     const list = await (await fetch('data/songs.json')).json();
+    // songs made in create.html and kept in this browser
+    try { for (const s of (window.UserSongs ? window.UserSongs.list() : [])) if (s.score && s.score.notes && s.score.notes.length && !list.some(x => x.id === s.id)) list.push({ id: s.id, label: s.title + ' ★ (yours)', score: s.score, video: s.video || null, mode: s.mode || 'fingers' }); } catch (e) { console.warn(e); }
     SONGS = Object.fromEntries(list.map(x => [x.id, x]));
     for (const x of list) ui.song.add(new Option(x.label, x.id));
     const want = location.hash.slice(1);

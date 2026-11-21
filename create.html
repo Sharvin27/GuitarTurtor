@@ -7,12 +7,11 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@600;700&display=swap">
 <style>
-  /* One centred column: the input box first, then live progress, then the result. */
   :root {
     --bg: #13151a; --surface: #1b1e25; --surface-2: #242831; --line: #343944; --ink: #e9ebef; --muted: #8d93a0;
     --accent: #f3a43b; --blue: #3d8bfd; --bad: #ef6b6b; --good: #6fcf8e;
     --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif; --body: "Barlow", system-ui, sans-serif;
-    color-scheme: dark;
+    color-scheme: dark; --ytpanel-bottom: 16px;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body);
@@ -23,27 +22,36 @@
   nav a:hover { color: var(--ink); border-color: var(--blue); }
   h1 { font: 700 clamp(30px, 6vw, 42px)/1.05 var(--display); margin: 0; text-wrap: balance; }
   .lead { color: var(--muted); margin: 0; }
-  form { display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
+  .card h2 { font: 700 19px var(--display); margin: 0; }
+  .card h2 b { color: var(--accent); margin-right: 6px; }
   label { display: grid; gap: 6px; font: 600 14px var(--display); letter-spacing: .02em; color: var(--muted); }
-  input, select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
-  input#name { font-size: 19px; padding: 13px 14px; }
+  input, select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; width: 100%; }
   input:focus, select:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-  .row { display: grid; grid-template-columns: 1fr 150px; gap: 12px; }
-  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
-  button { font: 700 17px var(--display); letter-spacing: .02em; color: #fff; background: var(--blue); border: 0; border-radius: 10px; padding: 12px 16px; cursor: pointer; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .row2 { display: grid; grid-template-columns: 1fr 140px; gap: 10px; }
+  @media (max-width: 520px) { .row3, .row2 { grid-template-columns: 1fr; } }
+  button, .btn { font: 700 16px var(--display); letter-spacing: .02em; color: #fff; background: var(--blue); border: 0; border-radius: 10px;
+    padding: 11px 14px; cursor: pointer; text-align: center; text-decoration: none; }
   button:disabled { opacity: .5; cursor: default; }
-  button.secondary { background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); }
+  button.secondary, .btn.secondary { background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); }
+  button.rec { background: var(--bad); }
   .note { font-size: 14px; color: var(--muted); margin: 0; }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 10px; }
-  .card h2 { font: 700 18px var(--display); margin: 0; }
-  ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
-  ol.steps li.err { color: var(--bad); }
-  ol.steps li.ok { color: var(--good); }
-  code { font-family: ui-monospace, Consolas, monospace; font-size: 14px; background: var(--surface-2); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+  .links { display: flex; gap: 8px; flex-wrap: wrap; }
+  .links a { color: var(--blue); }
+  .status { font-size: 15px; margin: 0; min-height: 1.5em; }
+  .status.err { color: var(--bad); } .status.ok { color: var(--good); }
+  .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
   .actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  .actions a { font: 700 16px var(--display); text-decoration: none; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
-  .actions a:hover { border-color: var(--blue); }
-  .muted { color: var(--muted); }
+  ul.mine { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  ul.mine li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  ul.mine li span { flex: 1; min-width: 140px; }
+  ul.mine a { color: var(--blue); font-size: 14px; }
+  ul.mine button { font-size: 13px; padding: 4px 10px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+  input[type=file] { padding: 8px; }
 </style>
 </head>
 <body>
@@ -51,107 +59,198 @@
   <nav><a href="tabs.html">Tab view</a><a href="index.html">3D hands view</a></nav>
   <div>
     <h1>Add a song</h1>
-    <p class="lead">Type a song name. The helper finds a guitar cover on YouTube, transcribes the guitar and adds it to the tab view and the 3D hands.</p>
+    <p class="lead">Pick a video, give it the guitar audio, and your browser writes the tab. Nothing is uploaded: the song is saved in this browser.</p>
   </div>
 
-  <section class="card" id="offline" hidden>
-    <h2>Start the helper on your computer</h2>
-    <p class="note">Transcribing needs a small program running on your PC. GitHub Pages can only show the finished tabs.</p>
-    <ol class="steps">
-      <li>Open a terminal and run <code>python D:\sharvin1\Projects\Music\songforge\server.py</code></li>
-      <li>Open <a href="http://127.0.0.1:8777/create.html">http://127.0.0.1:8777/create.html</a></li>
-    </ol>
+  <section class="card">
+    <h2><b>1</b>Find the video</h2>
+    <div class="row">
+      <label for="name">Song name<input id="name" placeholder="e.g. Choo Lo intro" autocomplete="off"></label>
+      <button class="secondary" id="search" type="button">Search</button>
+    </div>
+    <div class="links" id="links" hidden></div>
+    <div class="row">
+      <label for="url">YouTube link<input id="url" inputmode="url" placeholder="Paste the video’s link" autocomplete="off"></label>
+      <button class="secondary" id="loadVid" type="button">Load</button>
+    </div>
+    <p class="status" id="vidMsg"></p>
   </section>
 
-  <form id="form" autocomplete="off">
-    <label for="name">Song
-      <input id="name" name="name" required placeholder="e.g. Choo Lo The Local Train intro">
-    </label>
-    <div class="row">
-      <label for="url">YouTube link (optional)
-        <input id="url" name="url" inputmode="url" placeholder="Use this video instead of searching">
-      </label>
-      <label for="preset">Guitar tone
-        <select id="preset" name="preset">
-          <option value="auto">Detect</option>
-          <option value="clean">Clean / acoustic</option>
-          <option value="lead">Distorted lead</option>
+  <section class="card">
+    <h2><b>2</b>Give it the guitar audio</h2>
+    <div class="row3">
+      <label for="file" class="btn secondary">Upload a file<input id="file" type="file" accept="audio/*,video/*" hidden></label>
+      <button class="secondary" id="mic" type="button">Record mic</button>
+      <button class="secondary" id="cap" type="button">Capture the video</button>
+    </div>
+    <p class="note">Capture: Chrome asks what to share. Choose <b>this tab</b> and turn on <b>Share tab audio</b>; the video starts playing and is recorded until you press Stop. Don’t pause or seek while it records.</p>
+    <div class="row2">
+      <label for="model">Model
+        <select id="model">
+          <option value="guitab">guitab E25 (best on clean / fingerstyle)</option>
+          <option value="basic-pitch">basic-pitch (any guitar)</option>
         </select>
       </label>
+      <label for="offset">Audio starts at video time (s)<input id="offset" type="number" step="0.01" value="0"></label>
     </div>
-    <button id="go" type="submit">Create tab</button>
-    <p class="note">Takes about 1–3 minutes. Automatic tabs are a starting point: roughly 3 in 4 notes right on clean guitar, fewer on distorted guitar over a backing track.</p>
-  </form>
-
-  <section class="card" id="progress" hidden>
-    <h2 id="ptitle">Working…</h2>
-    <ol class="steps" id="steps"></ol>
-    <div class="actions" id="result" hidden>
-      <a id="openTab" href="tabs.html">Open the tab</a>
-      <a id="open3d" href="index.html">Open the 3D hands</a>
-      <button class="secondary" id="publish" type="button">Publish to the live site</button>
-    </div>
-    <p class="note" id="pubmsg"></p>
+    <p class="status" id="audMsg">No audio yet.</p>
+    <button id="go" type="button" disabled>Write the tab</button>
+    <div class="bar" id="bar" hidden><i></i></div>
   </section>
+
+  <section class="card" id="result" hidden>
+    <h2><b>3</b>Your tab</h2>
+    <p class="status ok" id="resMsg"></p>
+    <div class="actions">
+      <a class="btn" id="openTab" href="tabs.html">Open the tab</a>
+      <a class="btn" id="open3d" href="index.html">Open the 3D hands</a>
+      <button class="secondary" id="dl" type="button">Download tab (JSON)</button>
+    </div>
+    <p class="note">Automatic tabs are a starting point: about 3 in 4 notes right on clean solo guitar, fewer over a band. Send the JSON to add the song for everyone.</p>
+  </section>
+
+  <section class="card" id="mineCard" hidden>
+    <h2>Saved in this browser</h2>
+    <ul class="mine" id="mine"></ul>
+  </section>
+
+  <p class="note">Have Python? The local helper <code>python songforge/server.py</code> still exists: type a song name and it finds and downloads the YouTube audio for you.</p>
+  <p class="note">Transcription: <a href="https://github.com/DanieleMorotti/guitab" style="color:inherit">guitab</a> by Daniele Morotti (code MIT, model CC BY-NC-SA 4.0, non-commercial) and <a href="https://github.com/spotify/basic-pitch" style="color:inherit">basic-pitch</a> by Spotify (Apache-2.0).</p>
 </main>
-<script>
+<script src="js/yt.js"></script>
+<script src="js/user-songs.js"></script>
+<script type="module">
+import { decodeAudio, transcribe, toScore } from './js/songmaker.js';
 const $ = id => document.getElementById(id);
-let current = null;
+let yt = null, videoId = '', audioBlob = null, audioLabel = '', last = null, rec = null;
 
-async function helperUp() {
-  try { const r = await fetch('/api/health', { cache: 'no-store' }); return r.ok && (await r.json()).ok; } catch { return false; }
+const msg = (el, text, cls = '') => { $(el).textContent = text; $(el).className = 'status ' + cls; };
+const ytId = s => { s = s.trim(); const m = s.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})/); return m ? m[1] : /^[\w-]{11}$/.test(s) ? s : ''; };
+const slug = s => s.toLowerCase().normalize('NFKD').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'song';
+
+$('search').onclick = () => {
+  const q = $('name').value.trim(); if (!q) { $('name').focus(); return; }
+  const a = (text, extra) => `<a href="https://www.youtube.com/results?search_query=${encodeURIComponent(q + extra)}" target="_blank" rel="noopener">${text}</a>`;
+  $('links').innerHTML = a('Guitar covers ↗', ' guitar cover') + a('Lessons ↗', ' guitar lesson') + a('Any ↗', '') +
+    '<span class="note">Open one, copy the video link, paste it below.</span>';
+  $('links').hidden = false;
+};
+$('loadVid').onclick = async () => {
+  const id = ytId($('url').value);
+  if (!id) { msg('vidMsg', 'That doesn’t look like a YouTube link.', 'err'); return; }
+  msg('vidMsg', 'Loading the video…');
+  try {
+    yt = yt || new YTSync({ onError: c => msg('vidMsg', 'YouTube error ' + c + ' (the owner may block embedding).', 'err') });
+    await yt.load(id, $('name').value.trim() || 'Video');
+    videoId = id; msg('vidMsg', 'Video loaded (bottom right). It plays with the finished tab.', 'ok');
+  } catch (e) { msg('vidMsg', e.message, 'err'); }
+};
+
+function setAudio(blob, label, offset) {
+  audioBlob = blob; audioLabel = label;
+  if (offset != null) $('offset').value = offset.toFixed(2);
+  msg('audMsg', 'Audio ready: ' + label, 'ok'); $('go').disabled = false;
 }
+$('file').onchange = e => { const f = e.target.files[0]; if (f) setAudio(f, f.name, 0); };
 
-function addStep(text, cls) { const li = document.createElement('li'); li.textContent = text; if (cls) li.className = cls; $('steps').appendChild(li); li.scrollIntoView({ block: 'nearest' }); }
+// Records a stream's audio until stop(); onStart runs when the recorder actually starts.
+function record(stream, btn, label, onStart) {
+  const tracks = stream.getAudioTracks();
+  if (!tracks.length) { stream.getTracks().forEach(t => t.stop()); throw new Error('No audio was shared. Choose this tab and turn on “Share tab audio”.'); }
+  const mr = new MediaRecorder(new MediaStream(tracks)), chunks = [], old = btn.textContent;
+  mr.ondataavailable = e => e.data.size && chunks.push(e.data);
+  mr.onstart = () => onStart && onStart();
+  const stop = () => { if (mr.state !== 'inactive') mr.stop(); };
+  mr.onstop = () => {
+    stream.getTracks().forEach(t => t.stop()); btn.textContent = old; btn.classList.remove('rec'); rec = null;
+    if (chunks.length) setAudio(new Blob(chunks, { type: mr.mimeType }), label + ' (' + new Date().toLocaleTimeString() + ')', rec_offset);
+  };
+  tracks[0].onended = stop;                      // user pressed Chrome's "Stop sharing"
+  btn.textContent = 'Stop'; btn.classList.add('rec');
+  mr.start(1000);
+  rec = { stop, btn };
+}
+let rec_offset = 0;
 
-async function poll(job) {
-  let shown = 0;
-  for (;;) {
-    const j = await (await fetch('/api/job?id=' + job, { cache: 'no-store' })).json();
-    for (; shown < j.events.length; shown++) {
-      const ev = j.events[shown];
-      addStep(ev.msg, ev.stage === 'error' ? 'err' : ev.stage === 'done' ? 'ok' : '');
-    }
-    if (j.state !== 'running') return j;
-    await new Promise(r => setTimeout(r, 1000));
+$('mic').onclick = async () => {
+  if (rec) return rec.stop();
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser can’t record the microphone.');
+    const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    rec_offset = 0;
+    record(s, $('mic'), 'Microphone recording');
+    msg('audMsg', 'Recording the microphone… press Stop when done.');
+  } catch (e) { msg('audMsg', 'Microphone: ' + e.message, 'err'); }
+};
+
+$('cap').onclick = async () => {
+  if (rec) return rec.stop();
+  try {
+    if (!yt || !yt.ready) throw new Error('Load the YouTube video first (step 1).');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('This browser can’t capture tab audio. Use Chrome on a computer, or upload a file.');
+    yt.pause();
+    const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, preferCurrentTab: true, selfBrowserSurface: 'include' });
+    // time alignment: audio t = 0 is when the recorder starts; once the video is playing, map back to video time
+    let t0 = 0;
+    record(s, $('cap'), 'Captured video audio', () => {
+      t0 = performance.now(); rec_offset = yt.time();
+      yt.play(yt.time(), 1);
+      const poll = setInterval(() => {
+        if (!rec) return clearInterval(poll);
+        if (yt.state === 1) { rec_offset = yt.time() - (performance.now() - t0) / 1000; clearInterval(poll); }
+      }, 50);
+    });
+    msg('audMsg', 'Capturing… the video plays now. Press Stop when the part you want is over.');
+  } catch (e) { msg('audMsg', 'Capture: ' + e.message, 'err'); }
+};
+
+const bar = f => { $('bar').hidden = false; $('bar').firstChild.style.width = Math.round(100 * Math.max(0, Math.min(1, f))) + '%'; };
+$('go').onclick = async () => {
+  if (!audioBlob) return;
+  $('go').disabled = true; $('result').hidden = true;
+  try {
+    msg('audMsg', 'Decoding the audio…'); bar(0);
+    const y = await decodeAudio(audioBlob);
+    const { notes, engine } = await transcribe(y, { engine: $('model').value, progress: (f, t) => { bar(f); msg('audMsg', t); } });
+    const score = toScore(notes, parseFloat($('offset').value) || 0);
+    const title = $('name').value.trim() || audioLabel.replace(/\.\w+$/, '') || 'My song';
+    const id = 'u-' + slug(title) + '-' + Date.now().toString(36).slice(-4);
+    last = { id, title, artist: 'you', kind: 'Auto tab (' + engine + ')', label: title, video: videoId, mode: 'fingers',
+      duration: +(score.notes[score.notes.length - 1].t + 2).toFixed(2), engine, created: new Date().toISOString(), score };
+    const saved = UserSongs.save(last);
+    $('bar').hidden = true;
+    msg('audMsg', `Done with ${engine}.`, 'ok');
+    $('resMsg').textContent = `“${title}”: ${score.notes.length} notes, ♩ ≈ ${Math.round(score.bpm)}` + (saved ? ' · saved in this browser' : ' · could not save here (storage blocked): download the JSON');
+    $('resMsg').className = 'status ' + (saved ? 'ok' : 'err');
+    $('openTab').href = 'tabs.html#' + id; $('open3d').href = 'index.html#' + id;
+    $('result').hidden = false; showMine();
+  } catch (e) { console.error(e); msg('audMsg', 'Transcription failed: ' + e.message, 'err'); }
+  $('go').disabled = false;
+};
+
+function download(song) {
+  const { score, ...meta } = song;
+  const blob = new Blob([JSON.stringify({ ...meta, bpm: score.bpm, grid: score.grid, notes: score.notes })], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = song.id + '.json';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$('dl').onclick = () => last && download(last);
+
+function showMine() {
+  const list = UserSongs.list();
+  $('mineCard').hidden = !list.length; $('mine').textContent = '';
+  for (const s of list) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span></span><a href="tabs.html#${s.id}">tab</a><a href="index.html#${s.id}">3D</a>`;
+    li.querySelector('span').textContent = `${s.title} · ${s.score.notes.length} notes`;
+    const dl = document.createElement('button'); dl.className = 'secondary'; dl.textContent = 'JSON'; dl.onclick = () => download(s);
+    const rm = document.createElement('button'); rm.className = 'secondary'; rm.textContent = 'Delete';
+    rm.onclick = () => { if (confirm(`Delete “${s.title}” from this browser?`)) { UserSongs.remove(s.id); showMine(); } };
+    li.append(dl, rm); $('mine').appendChild(li);
   }
 }
-
-$('form').addEventListener('submit', async e => {
-  e.preventDefault();
-  const name = $('name').value.trim();
-  if (!name) return;
-  $('go').disabled = true; $('progress').hidden = false; $('result').hidden = true; $('steps').textContent = ''; $('pubmsg').textContent = '';
-  $('ptitle').textContent = `Working on “${name}”…`;
-  try {
-    const r = await fetch('/api/make', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, url: $('url').value.trim(), preset: $('preset').value }) });
-    const { job, error } = await r.json();
-    if (!job) throw new Error(error || 'The helper refused the request.');
-    const j = await poll(job);
-    if (j.state === 'done') {
-      current = j.song;
-      $('ptitle').textContent = `“${name}” is ready`;
-      $('openTab').href = 'tabs.html#' + current; $('open3d').href = 'index.html#' + current;
-      $('result').hidden = false;
-    } else $('ptitle').textContent = 'That didn’t work';
-  } catch (err) { addStep(err.message, 'err'); $('ptitle').textContent = 'That didn’t work'; }
-  $('go').disabled = false;
-});
-
-$('publish').addEventListener('click', async () => {
-  if (!current) return;
-  $('publish').disabled = true; $('pubmsg').textContent = 'Publishing the tab (no audio) to GitHub…';
-  try {
-    const r = await (await fetch('/api/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: current }) })).json();
-    $('pubmsg').textContent = r.ok ? 'Published. The live site updates in about a minute.' : 'Publishing failed: ' + (r.message || r.error);
-  } catch (err) { $('pubmsg').textContent = 'Publishing failed: ' + err.message; }
-  $('publish').disabled = false;
-});
-
-helperUp().then(up => {
-  if (!up) { $('offline').hidden = false; [...$('form').elements].forEach(el => el.disabled = true); }
-});
+showMine();
+window.__songmaker = { get last() { return last; } };
 </script>
 </body>
 </html>
