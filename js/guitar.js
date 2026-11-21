@@ -28,7 +28,7 @@ export const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
 // once it has loaded, so a missing file leaves the flat colour in place.
 const texLoader = new THREE.TextureLoader();
 export function applyTexture(mat, file, { repeat = [1, 1], rotation = 0, tint = 0xffffff } = {}) {
-  if (typeof document === 'undefined') return;   // node (tools/selfcheck.mjs): no image loading, geometry only
+  if (typeof document === 'undefined') return;   // Node (tools/selfcheck.mjs): no images to load
   texLoader.load(new URL('../assets/textures/' + file, import.meta.url).href, t => {
     t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
