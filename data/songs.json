@@ -14,5 +14,13 @@
     "audio": "audio/choo-lo.mp3",
     "video": "D1I84oQuGpM",
     "mode": "fingers"
+  },
+  {
+    "id": "falling-in-love-with-you",
+    "label": "Falling in love with you (auto)",
+    "data": "data/score-falling-in-love-with-you.json",
+    "audio": "audio/falling-in-love-with-you.mp3",
+    "video": "xdX4ReZnJVk",
+    "mode": "fingers"
   }
 ]
