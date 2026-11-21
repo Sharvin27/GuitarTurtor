@@ -4,7 +4,8 @@ import re, pathlib
 root = pathlib.Path(__file__).resolve().parent.parent
 s = (root / "index.html").read_text(encoding="utf-8")
 for pat in [r'<!doctype html>\s*', r'<html[^>]*>\s*', r'<head>\s*', r'<meta charset="utf-8">\s*', r'<meta name="viewport"[^>]*>\s*',
-            r'</head>\s*', r'<body>\s*', r'</body>\s*', r'</html>\s*', r'<script src="js/yt.js"></script>\s*']:
+            r'</head>\s*', r'<body>\s*', r'</body>\s*', r'</html>\s*', r'<script src="js/yt.js"></script>\s*',
+            r'<a class="linkbtn" href="create.html">\+ Add a song</a>\s*']:
     s = re.sub(pat, '', s, count=1, flags=re.I)
 s = s.replace('<a id="tabslink" class="linkbtn" href="tabs.html">Tab view</a>',
               '<a id="tabslink" class="linkbtn" href="https://claude.ai/artifact/Nt112kzemAj4qWHcohEyWi" target="_blank" rel="noopener">Tab view ↗</a>')

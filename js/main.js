@@ -9,10 +9,7 @@ import { Performer } from './performer.js';
 import { HAND_LEFT, HAND_RIGHT } from './hand-assets.js';
 import { renderSong } from './synth.js';
 
-const SONGS = {
-  'choo-lo': { label: 'Choo Lo (acoustic, fingerpicked)', data: 'data/score-choo-lo.json', audio: 'audio/choo-lo.mp3', video: 'D1I84oQuGpM', mode: 'fingers' },
-  'rabba': { label: 'Rabba Mein Toh Mar Gya (electric, pick)', data: 'data/score-rabba.json', audio: 'audio/rabba.mp3', video: '3efgaqeI9qk', mode: 'pick' },
-};
+let SONGS = {};   // filled from data/songs.json (written by the tab-viewer build)
 const FINGER_COLORS = [0x4cc9f0, 0x80ed99, 0xffd166, 0xef476f];
 const FINGER_NAMES = ['index', 'middle', 'ring', 'pinky'];
 const PLUCK_LABEL = { thumb: 'p', index: 'i', middle: 'm', ring: 'a' };
@@ -280,7 +277,6 @@ function frame(t) {
 }
 
 // ---------- UI ----------
-for (const [k, s] of Object.entries(SONGS)) ui.song.add(new Option(s.label, k));
 ui.song.addEventListener('change', () => loadSong(ui.song.value));
 ui.play.addEventListener('click', () => setPlaying(!playing));
 ui.scrub.addEventListener('input', () => seek(parseFloat(ui.scrub.value)));
@@ -317,7 +313,16 @@ resize();
 const start = guitar.localToWorld(new THREE.Vector3(contactX(7), 0, 0));
 controls.target.copy(start);
 camera.position.copy(start).add(camOffset);
-loadSong('choo-lo').catch(e => { setStatus('Failed to load tab data: ' + e.message); console.error(e); });
+(async () => {
+  try {
+    const list = await (await fetch('data/songs.json')).json();
+    SONGS = Object.fromEntries(list.map(x => [x.id, x]));
+    for (const x of list) ui.song.add(new Option(x.label, x.id));
+    const want = location.hash.slice(1);
+    await loadSong(SONGS[want] ? want : (SONGS['choo-lo'] ? 'choo-lo' : list[0].id));
+  } catch (e) { setStatus('Failed to load the song list: ' + e.message); console.error(e); }
+})();
+window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (SONGS[k] && k !== songKey) loadSong(k); });
 requestAnimationFrame(frame);
 
 // exposed for debugging / headless checks

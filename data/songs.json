@@ -1,0 +1,18 @@
+[
+  {
+    "id": "rabba",
+    "label": "Rabba Mein Toh Mar Gya (electric, pick)",
+    "data": "data/score-rabba.json",
+    "audio": "audio/rabba.mp3",
+    "video": "3efgaqeI9qk",
+    "mode": "pick"
+  },
+  {
+    "id": "choo-lo",
+    "label": "Choo Lo (acoustic, fingerpicked)",
+    "data": "data/score-choo-lo.json",
+    "audio": "audio/choo-lo.mp3",
+    "video": "D1I84oQuGpM",
+    "mode": "fingers"
+  }
+]

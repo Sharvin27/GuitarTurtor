@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Add a Song</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@600;700&display=swap">
+<style>
+  /* One centred column: the input box first, then live progress, then the result. */
+  :root {
+    --bg: #13151a; --surface: #1b1e25; --surface-2: #242831; --line: #343944; --ink: #e9ebef; --muted: #8d93a0;
+    --accent: #f3a43b; --blue: #3d8bfd; --bad: #ef6b6b; --good: #6fcf8e;
+    --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif; --body: "Barlow", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 640px; margin: 0 auto; padding-block: 40px 60px; display: grid; gap: 22px; }
+  nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  nav a { color: var(--muted); text-decoration: none; font: 600 15px var(--display); padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; }
+  nav a:hover { color: var(--ink); border-color: var(--blue); }
+  h1 { font: 700 clamp(30px, 6vw, 42px)/1.05 var(--display); margin: 0; text-wrap: balance; }
+  .lead { color: var(--muted); margin: 0; }
+  form { display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  label { display: grid; gap: 6px; font: 600 14px var(--display); letter-spacing: .02em; color: var(--muted); }
+  input, select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  input#name { font-size: 19px; padding: 13px 14px; }
+  input:focus, select:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .row { display: grid; grid-template-columns: 1fr 150px; gap: 12px; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+  button { font: 700 17px var(--display); letter-spacing: .02em; color: #fff; background: var(--blue); border: 0; border-radius: 10px; padding: 12px 16px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.secondary { background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); }
+  .note { font-size: 14px; color: var(--muted); margin: 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 10px; }
+  .card h2 { font: 700 18px var(--display); margin: 0; }
+  ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  ol.steps li.err { color: var(--bad); }
+  ol.steps li.ok { color: var(--good); }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 14px; background: var(--surface-2); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .actions a { font: 700 16px var(--display); text-decoration: none; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  .actions a:hover { border-color: var(--blue); }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="tabs.html">Tab view</a><a href="index.html">3D hands view</a></nav>
+  <div>
+    <h1>Add a song</h1>
+    <p class="lead">Type a song name. The helper finds a guitar cover on YouTube, transcribes the guitar and adds it to the tab view and the 3D hands.</p>
+  </div>
+
+  <section class="card" id="offline" hidden>
+    <h2>Start the helper on your computer</h2>
+    <p class="note">Transcribing needs a small program running on your PC. GitHub Pages can only show the finished tabs.</p>
+    <ol class="steps">
+      <li>Open a terminal and run <code>python D:\sharvin1\Projects\Music\songforge\server.py</code></li>
+      <li>Open <a href="http://127.0.0.1:8777/create.html">http://127.0.0.1:8777/create.html</a></li>
+    </ol>
+  </section>
+
+  <form id="form" autocomplete="off">
+    <label for="name">Song
+      <input id="name" name="name" required placeholder="e.g. Choo Lo The Local Train intro">
+    </label>
+    <div class="row">
+      <label for="url">YouTube link (optional)
+        <input id="url" name="url" inputmode="url" placeholder="Use this video instead of searching">
+      </label>
+      <label for="preset">Guitar tone
+        <select id="preset" name="preset">
+          <option value="auto">Detect</option>
+          <option value="clean">Clean / acoustic</option>
+          <option value="lead">Distorted lead</option>
+        </select>
+      </label>
+    </div>
+    <button id="go" type="submit">Create tab</button>
+    <p class="note">Takes about 1–3 minutes. Automatic tabs are a starting point: roughly 3 in 4 notes right on clean guitar, fewer on distorted guitar over a backing track.</p>
+  </form>
+
+  <section class="card" id="progress" hidden>
+    <h2 id="ptitle">Working…</h2>
+    <ol class="steps" id="steps"></ol>
+    <div class="actions" id="result" hidden>
+      <a id="openTab" href="tabs.html">Open the tab</a>
+      <a id="open3d" href="index.html">Open the 3D hands</a>
+      <button class="secondary" id="publish" type="button">Publish to the live site</button>
+    </div>
+    <p class="note" id="pubmsg"></p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let current = null;
+
+async function helperUp() {
+  try { const r = await fetch('/api/health', { cache: 'no-store' }); return r.ok && (await r.json()).ok; } catch { return false; }
+}
+
+function addStep(text, cls) { const li = document.createElement('li'); li.textContent = text; if (cls) li.className = cls; $('steps').appendChild(li); li.scrollIntoView({ block: 'nearest' }); }
+
+async function poll(job) {
+  let shown = 0;
+  for (;;) {
+    const j = await (await fetch('/api/job?id=' + job, { cache: 'no-store' })).json();
+    for (; shown < j.events.length; shown++) {
+      const ev = j.events[shown];
+      addStep(ev.msg, ev.stage === 'error' ? 'err' : ev.stage === 'done' ? 'ok' : '');
+    }
+    if (j.state !== 'running') return j;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('name').value.trim();
+  if (!name) return;
+  $('go').disabled = true; $('progress').hidden = false; $('result').hidden = true; $('steps').textContent = ''; $('pubmsg').textContent = '';
+  $('ptitle').textContent = `Working on “${name}”…`;
+  try {
+    const r = await fetch('/api/make', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, url: $('url').value.trim(), preset: $('preset').value }) });
+    const { job, error } = await r.json();
+    if (!job) throw new Error(error || 'The helper refused the request.');
+    const j = await poll(job);
+    if (j.state === 'done') {
+      current = j.song;
+      $('ptitle').textContent = `“${name}” is ready`;
+      $('openTab').href = 'tabs.html#' + current; $('open3d').href = 'index.html#' + current;
+      $('result').hidden = false;
+    } else $('ptitle').textContent = 'That didn’t work';
+  } catch (err) { addStep(err.message, 'err'); $('ptitle').textContent = 'That didn’t work'; }
+  $('go').disabled = false;
+});
+
+$('publish').addEventListener('click', async () => {
+  if (!current) return;
+  $('publish').disabled = true; $('pubmsg').textContent = 'Publishing the tab (no audio) to GitHub…';
+  try {
+    const r = await (await fetch('/api/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: current }) })).json();
+    $('pubmsg').textContent = r.ok ? 'Published. The live site updates in about a minute.' : 'Publishing failed: ' + (r.message || r.error);
+  } catch (err) { $('pubmsg').textContent = 'Publishing failed: ' + err.message; }
+  $('publish').disabled = false;
+});
+
+helperUp().then(up => {
+  if (!up) { $('offline').hidden = false; [...$('form').elements].forEach(el => el.disabled = true); }
+});
+</script>
+</body>
+</html>
