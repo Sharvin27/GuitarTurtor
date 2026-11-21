@@ -32,6 +32,7 @@ Self-check result (mm): Choo Lo mean 0.10 / max 0.48; Rabba mean 0.34 / max 3.09
 ## Docs
 - `RESEARCH.md` — hand models, fingering algorithms, joint biomechanics, related projects (with links).
 - `PLAN.md` — architecture and priority list.
+- `docs/LEARNING-TIPS.md` — ranked guitar learning tips with sources, and which ones the app supports or plans.
 - `docs/HIGGSFIELD.md` — how to turn the 3D animation into realistic lesson videos with Higgsfield (workflow, prompts, checklist).
 
 ## Credits
