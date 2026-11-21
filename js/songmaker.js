@@ -10,6 +10,7 @@ const GT_MODEL = ['part0', 'part1'].map(p => new URL('../models/guitab_e25.onnx.
 const SR = 22050;
 const OPEN = [64, 59, 55, 50, 45, 40];             // string 0 = high e … 5 = low E
 const MAX_FRET = 22;
+export { reconcileChords } from './chord-agreement.js';
 
 // Any audio/video file the browser can decode -> mono Float32Array at 22.05 kHz (the rate of both models).
 export async function decodeAudio(blob) {
@@ -91,18 +92,78 @@ export async function transcribe(y, { engine = 'guitab', onset = 0.3, progress =
 }
 
 /* ---------- notes -> score ---------- */
-// Onset groups within 50 ms; skyline: the highest note at least 0.75x as loud as the loudest one.
-function skyline(raw, high = 0.75) {
+export async function loadChordShapes() {
+  try {
+    const r = await fetch(new URL('../chords/chord_shapes.json', import.meta.url));
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; } // Exact-pitch string search still works offline without the library.
+}
+
+const playable = notes => {
+  const frets = notes.map(([, f]) => f).filter(f => f > 0);
+  return new Set(notes.map(([s]) => s)).size === notes.length &&
+    notes.every(([s, f]) => Number.isInteger(s) && s >= 0 && s < 6 && Number.isInteger(f) && f >= 0 && f <= MAX_FRET) &&
+    (!frets.length || Math.max(...frets) - Math.min(...frets) <= 4);
+};
+
+// Keep the heard pitches (including octaves), prefer a library shape, then search the six strings.
+export function assignChord(pitches, lib = null) {
+  const ps = [...new Set(pitches)].sort((a, b) => a - b), pcs = new Set(ps.map(p => p % 12));
+  if (ps.length > 6 || pcs.size < 3) return null;
+  const cost = ns => ns.reduce((v, [, f]) => v + f, 0) + Math.max(...ns.map(([, f]) => f)) * 2;
+  let best = null, bestCost = Infinity;
+  const consider = ns => {
+    if (playable(ns) && cost(ns) < bestCost) { best = ns.map(n => n.slice()); bestCost = cost(ns); }
+  };
+  for (const chord of Object.values(lib?.chords || {})) {
+    if (chord.pcs.length !== pcs.size || !chord.pcs.every(p => pcs.has(p))) continue;
+    for (const shape of chord.shapes) {
+      const ns = shape.frets.flatMap((f, low) => Number.isInteger(f) ? [[5 - low, f]] : []);
+      const match = ps.map(p => ns.find(([s, f]) => OPEN[s] + f === p));
+      if (match.every(Boolean)) consider(match);
+    }
+  }
+  if (best) return best.sort((a, b) => a[0] - b[0]);
+  const visit = (i, ns) => {
+    if (i === ps.length) { consider(ns); return; }
+    for (let s = 0; s < 6; s++) {
+      const next = [...ns, [s, ps[i] - OPEN[s]]];
+      if (playable(next)) visit(i + 1, next);
+    }
+  };
+  visit(0, []);
+  return best && best.sort((a, b) => a[0] - b[0]);
+}
+
+// Preserve the 50 ms melody skyline. Extend only playable, overlapping strums:
+// any pitch order through 90 ms, or a monotonic sweep through 100 ms.
+function skyline(raw, high = 0.75, lib = null) {
   const ev = raw.filter(n => n.p >= OPEN[5] && n.p <= OPEN[0] + MAX_FRET).sort((a, b) => a.t - b.t);
   const out = [];
   for (let i = 0; i < ev.length;) {
     let j = i; while (j < ev.length && ev[j].t - ev[i].t <= 0.05) j++;
+    let end = j;
+    while (end < ev.length && ev[end].t - ev[i].t <= .1 + 1e-9) end++;
+    for (let k = end; k > j; k--) {
+      const sweep = ev.slice(i, k), span = sweep.at(-1).t - sweep[0].t;
+      const monotonic = [1, -1].some(dir => sweep.every((n, x) => !x || dir * (n.p - sweep[x - 1].p) > 0));
+      if (span > .09 + 1e-9 && !monotonic) continue;
+      const loud = Math.max(...sweep.map(n => n.a));
+      // Do not swallow a late quiet note, a repeated pitch, or a non-overlapping melody run.
+      if (new Set(sweep.map(n => n.p)).size !== sweep.length ||
+          !sweep.every(n => n.a >= .3 && n.a >= loud - (1 - high) * Math.abs(loud) && n.e > sweep.at(-1).t)) continue;
+      if (assignChord(sweep.map(n => n.p), lib)) { j = k; break; }
+    }
     const g = ev.slice(i, j), loud = Math.max(...g.map(n => n.a));
-    const top = g.filter(n => n.a >= loud - (1 - high) * Math.abs(loud)).reduce((a, b) => (b.p > a.p ? b : a));
-    out.push({ t: ev[i].t, p: top.p, a: top.a });
+    const strong = g.filter(n => n.a >= loud - (1 - high) * Math.abs(loud));
+    const top = strong.reduce((a, b) => (b.p > a.p ? b : a));
+    const sounding = strong.filter(n => n.a >= 0.3 && n.e > strong[strong.length - 1].t);
+    const chord = assignChord(sounding.map(n => n.p), lib);
+    out.push({ t: ev[i].t, p: top.p, a: top.a, ...(chord ? { chord } : {}) });
     i = j;
   }
-  return out.filter((e, i, arr) => !(i && e.p === arr[i - 1].p && e.t - arr[i - 1].t < 0.13));
+  return out.filter((e, i, arr) => !(i && !e.chord && !arr[i - 1].chord && e.p === arr[i - 1].p && e.t - arr[i - 1].t < 0.13));
 }
 
 // String/fret by beam-search Viterbi following the hand (port of pitch-model/transcribe.py: assign/trans_cost):
@@ -159,8 +220,8 @@ function beatGrid(times, end) {
 
 // raw notes [{t,e,p,a}] (seconds into the audio) -> {bpm, grid, notes:[{t,q,d,n:[[string,fret]],sec}]}.
 // offset = video time at the audio's start, so note times are video times.
-export function toScore(raw, offset = 0, high = 0.75) {
-  const ev = skyline(raw, high).map(e => ({ ...e, t: e.t + offset })).filter(e => e.t >= 0);
+export function toScore(raw, offset = 0, high = 0.75, lib = null) {
+  const ev = skyline(raw, high, lib).map(e => ({ ...e, t: e.t + offset })).filter(e => e.t >= 0);
   if (!ev.length) throw new Error('No notes were found in this audio.');
   const pos = fingering(ev);
   const end = ev[ev.length - 1].t;
@@ -170,7 +231,7 @@ export function toScore(raw, offset = 0, high = 0.75) {
     let q = Math.round((e.t - grid[0]) / period * 4) / 4;
     if (q <= prevQ) q = prevQ + 0.25;
     prevQ = q;
-    return { t: +e.t.toFixed(3), q, n: [pos[i].slice()] };
+    return { t: +e.t.toFixed(3), q, n: e.chord || [pos[i].slice()] };
   });
   notes.forEach((n, i) => {
     n.d = i + 1 < notes.length ? Math.max(1, Math.min(16, Math.round((notes[i + 1].q - n.q) * 4))) : 4;

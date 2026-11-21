@@ -1,6 +1,16 @@
-// Chord panel for the 3D view: the chord the melody implies right now (js/harmony.js), a diagram of a
+// Chord panel for the 3D view: audio chords when available, otherwise implied harmony, and a diagram of a
 // playable shape from the chord library (chords/chord_shapes.json), and the next chord with a countdown.
 // Toggle with the panel's button or the C key. Only touches the DOM when what it shows changes.
+import { analyzeHarmony } from './harmony.js';
+import { reconcileChords } from './chord-agreement.js';
+
+export function chordSource(score, events) {
+  const audio = Array.isArray(score.chords);
+  const segs = reconcileChords(audio ? score.chords : analyzeHarmony(events), events || score.notes || []);
+  return { segs, label: segs.some(s => s.source === 'notes') ? 'from played notes and audio' :
+    audio ? 'from the audio' : 'estimated from the melody' };
+}
+
 const FINGER_CSS = ['#4cc9f0', '#80ed99', '#ffd166', '#ef476f'];   // index, middle, ring, pinky (as the 3D markers)
 const KEY = 'guitar3d.chords';
 const store = {
@@ -55,6 +65,12 @@ export class ChordPanel {
 
   /** segments from analyzeHarmony(); an empty list hides the panel */
   setSegments(segs) { this.segs = segs || []; this.shown = undefined; this.el.hidden = !this.segs.length; }
+
+  setScore(score, events) {
+    const { segs, label } = chordSource(score, events);
+    this.el.querySelector('.cp-note').textContent = label;
+    this.setSegments(segs);
+  }
 
   update(T) {
     if (!this.segs.length) return;
