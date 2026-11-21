@@ -4,6 +4,14 @@
 // We run our own forward kinematics in Armature space and write bone position+quaternion each frame.
 import * as THREE from 'three';
 import { applyTexture } from './guitar.js';
+import { subdivideSkinned } from './subdivide.js';
+
+// skin: physical material with a soft sheen, so the smoothed mesh reads as skin rather than plastic
+const skinMaterial = () => new THREE.MeshPhysicalMaterial({
+  color: 0xe2b392, roughness: 0.55, metalness: 0.0,
+  sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffc4a8),
+  clearcoat: 0.08, clearcoatRoughness: 0.6,
+});
 
 export const FINGERS = ['index', 'middle', 'ring', 'pinky'];
 const D2R = Math.PI / 180;
@@ -52,10 +60,13 @@ export class HandRig {
       if (o.isSkinnedMesh || o.isMesh) {
         o.frustumCulled = false;
         o.castShadow = true;
-        o.material = new THREE.MeshStandardMaterial({ color: 0xe2b392, roughness: 0.62, metalness: 0.0 });
+        // 2 levels of Loop subdivision: 1360 -> ~21k vertices, smooth knuckles and fingertips
+        if (o.isSkinnedMesh) o.geometry = subdivideSkinned(o.geometry, 2);
+        o.material = skinMaterial();
         applyTexture(o.material, 'skin.jpg', { repeat: [3, 3], tint: 0xffeee6 });
       }
     });
+    this._addNails(gltfScene);
     const B = n => this.bones[n];
     this.rest = {};
     for (const [n, b] of Object.entries(this.bones)) this.rest[n] = { p: b.position.clone(), q: b.quaternion.clone() };
@@ -101,6 +112,44 @@ export class HandRig {
     this.arm.name = side + 'Forearm';
     this.invPlace = new THREE.Matrix4();
     this.place = new THREE.Matrix4();
+  }
+
+  /**
+   * Fingernails: a thin, slightly curved cap on the dorsal side (+Y, WebXR convention) of each distal
+   * phalanx. Size and height come from the mesh itself: the vertices bound mostly to that bone, taken
+   * into the bone's rest frame, give the finger's dorsal surface and width there.
+   */
+  _addNails(scene) {
+    let mesh = null;
+    scene.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+    if (!mesh) return;
+    const sk = mesh.skeleton, g = mesh.geometry, pos = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    const nailMat = new THREE.MeshPhysicalMaterial({ color: 0xe8b4a4, roughness: 0.3, clearcoat: 0.6, clearcoatRoughness: 0.3 });
+    const cap = new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);   // dome toward +Y
+    const v = new THREE.Vector3();
+    for (const fn of [...FINGERS, 'thumb']) {
+      const dn = fn === 'thumb' ? 'thumb-phalanx-distal' : `${fn}-finger-phalanx-distal`;
+      const tn = fn === 'thumb' ? 'thumb-tip' : `${fn}-finger-tip`;
+      const bi = sk.bones.findIndex(b => b.name === dn), ti = sk.bones.findIndex(b => b.name === tn);
+      if (bi < 0) continue;
+      const inv = sk.boneInverses[bi];
+      let maxY = -Infinity, minX = Infinity, maxX = -Infinity, minZ = Infinity, n = 0;
+      for (let i = 0; i < pos.count; i++) {
+        let w = 0;
+        for (let j = 0; j < 4; j++) if (si.getComponent(i, j) === bi || si.getComponent(i, j) === ti) w += sw.getComponent(i, j);
+        if (w < 0.6) continue;
+        v.fromBufferAttribute(pos, i).applyMatrix4(mesh.bindMatrix).applyMatrix4(inv);   // bone rest frame
+        maxY = Math.max(maxY, v.y); minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x); minZ = Math.min(minZ, v.z); n++;
+      }
+      if (n < 8) continue;
+      const width = (maxX - minX) * 0.52, len = Math.min(-minZ, 0.016) * 0.55;   // nail covers ~half the distal phalanx
+      const nail = new THREE.Mesh(cap, nailMat);
+      nail.scale.set(width / 2, 0.0011, len / 2);
+      nail.position.set((maxX + minX) / 2, maxY - 0.0008, minZ * 0.62);
+      nail.castShadow = false;
+      nail.name = fn + 'Nail';
+      sk.bones[bi].add(nail);
+    }
   }
 
   _chain(name, names, dofs) {

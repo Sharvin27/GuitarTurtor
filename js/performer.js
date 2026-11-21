@@ -7,10 +7,12 @@ import { sample, FINGER_KEYS, PLUCK_X } from './timeline.js';
 import { Spring3 } from './hand.js';
 
 const D2R = Math.PI / 180;
-// fretting-hand placement (fitted offline by grid search over IK error)
+// fretting-hand placement, fitted offline (node tools/selfcheck.mjs --fit-left) on fingertip error AND
+// posture. The old fit (alpha 12, ky 0.025) had the same error but flat knuckles (MCP ~0 deg) and hooked
+// fingers (PIP ~89 deg); raising the knuckles gives MCP ~33, PIP ~62 and a more upright fingertip.
 export const LEFT = {
-  alpha: 12 * D2R,                    // finger direction tilt out of the fingerboard plane
-  ky: 0.025,                          // knuckle height above the fingerboard
+  alpha: 16 * D2R,                    // finger direction tilt out of the fingerboard plane
+  ky: 0.048,                          // knuckle height above the fingerboard
   kz: focus => 0.035 - 0.006 * focus, // knuckle distance beyond the treble edge, by string focus
 };
 // picking-hand placement (fitted offline, see tools/selfcheck.mjs --fit-right)

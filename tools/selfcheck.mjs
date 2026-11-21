@@ -29,7 +29,7 @@ function simulate(key, file, mode, verbose = true) {
   perf.setEvents(events);
   const dt = 1 / 60, end = events[events.length - 1].t + 1;
   let ei = 0, first = true;
-  const fretErr = [], pluckErr = [], worst = [];
+  const fretErr = [], pluckErr = [], worst = [], mcp = [], pip = [], tilt = [];
   let pi = 0; const plucks = mode === 'pick' ? events.plucks.pick : Object.entries(events.plucks).flatMap(([k, l]) => l.map(p => ({ ...p, rf: k }))).sort((a, b) => a.t - b.t);
   for (let T = 0; T < end; T += dt) {
     const out = perf.update(T, dt, first); first = false;
@@ -41,6 +41,12 @@ function simulate(key, file, mode, verbose = true) {
         const d = left.tipG(k).distanceTo(exact) * 1000;
         fretErr.push(d);
         worst.push({ d, t: ev.t, s: n.s, f: n.f, k, pos: ev.pos, legato: ev.legato });
+        // posture: knuckle (MCP) and middle-joint (PIP) flexion, and how far the fingertip bone leans
+        // from perpendicular to the fingerboard (0 deg = tip lands straight down, as guitarists are taught)
+        const ch = left.chains[k];
+        mcp.push(ch.theta[1] * 180 / Math.PI); pip.push(ch.theta[2] * 180 / Math.PI);
+        const a = ch.outP[3].clone().applyMatrix4(left.place), b = ch.outP[4].clone().applyMatrix4(left.place);
+        tilt.push(Math.acos(Math.min(1, Math.max(-1, b.sub(a).normalize().dot(new THREE.Vector3(0, -1, 0))))) * 180 / Math.PI);
       }
     }
     // picking: at each pluck onset the plucking finger (or pick tip) should be at the string
@@ -65,11 +71,33 @@ function simulate(key, file, mode, verbose = true) {
     console.log('fretting fingertip error at onset (mm):', JSON.stringify(stats(fretErr)));
     console.log('picking contact error at onset (mm):   ', JSON.stringify(stats(pluckErr)));
     console.log('worst fretting notes:', worst.slice(0, 6).map(w => `t=${w.t.toFixed(2)} s${w.s}f${w.f} ${w.k} pos${w.pos}${w.legato ? ' ' + w.legato : ''}: ${w.d.toFixed(1)}mm`).join(' | '));
+    console.log('posture at onset (deg): MCP', JSON.stringify(stats(mcp)), ' PIP', JSON.stringify(stats(pip)), ' tip tilt', JSON.stringify(stats(tilt)));
   }
-  return { fret: stats(fretErr), pluck: stats(pluckErr) };
+  return { fret: stats(fretErr), pluck: stats(pluckErr), mcp: stats(mcp), pip: stats(pip), tilt: stats(tilt) };
 }
 
-if (process.argv.includes('--fit-right')) {
+if (process.argv.includes('--fit-left')) {
+  // fretting-hand placement: fingertip accuracy AND natural posture (knuckles bent ~45 deg, middle joint
+  // ~70 deg, fingertip close to perpendicular to the fingerboard), over both songs
+  const res = [];
+  const A = (process.env.FIT_ALPHA || '0,12,25').split(',').map(Number);
+  const KY = (process.env.FIT_KY || '0.025,0.035,0.045,0.055').split(',').map(Number);
+  const KZ = (process.env.FIT_KZ || '0.015,0.025,0.035').split(',').map(Number);
+  const kz0 = PF.LEFT.kz;
+  for (const alpha of A) for (const ky of KY) for (const kz of KZ) {
+    Object.assign(PF.LEFT, { alpha: alpha * Math.PI / 180, ky, kz: f => kz - 0.006 * f });
+    const r = SONGS.map(s => simulate(...s, false));
+    const err = r.reduce((a, x) => a + x.fret.mean, 0) / r.length, worst = Math.max(...r.map(x => x.fret.max));
+    const mcp = r.reduce((a, x) => a + x.mcp.mean, 0) / r.length, pip = r.reduce((a, x) => a + x.pip.mean, 0) / r.length;
+    const tilt = r.reduce((a, x) => a + x.tilt.mean, 0) / r.length;
+    const score = err + 0.15 * worst + ((mcp - 45) / 15) ** 2 + ((pip - 70) / 20) ** 2 + (Math.max(0, tilt - 15) / 10) ** 2;
+    res.push({ alpha, ky, kz, err: +err.toFixed(2), worst, mcp: +mcp.toFixed(0), pip: +pip.toFixed(0), tilt: +tilt.toFixed(0), score: +score.toFixed(2) });
+    console.log(JSON.stringify(res[res.length - 1]));
+  }
+  PF.LEFT.kz = kz0;
+  res.sort((a, b) => a.score - b.score);
+  console.log('BEST', JSON.stringify(res.slice(0, 5)));
+} else if (process.argv.includes('--fit-right')) {
   const res = [];
   for (const beta of [20, 35, 50]) for (const ky of [0.045, 0.06, 0.075]) for (const kz of [-0.015, 0.0, 0.015, 0.03]) for (const dx of [-0.01, 0.0, 0.01, 0.02]) {
     Object.assign(PF.RIGHT, { beta: beta * Math.PI / 180, ky, kz, dx });
