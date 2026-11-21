@@ -21,6 +21,12 @@ export const LEFT = {
   roll: focus => Math.max(-8, Math.min(8, WRIST.rollK * (focus - 1.5))) * D2R, // hand rolls as the fingers reach the bass strings
 };
 export const WRIST = { on: true, rollK: -2.5 };   // deg of roll per string of reach (sign picked by the self-check: -2.5 and 0 tie, +4 is worse)
+// thumb pad on the back of the neck: dx behind the knuckle line (toward the nut), u = position round the
+// neck back (-1 treble edge .. 0 centre .. 1 bass edge), shifted with the string focus. Fitted offline for
+// reachability (node tools/fit-thumb.mjs).
+// The old values (dx -0.02, u0 -0.9, uk 0.18, depth 0.02) missed by ~13 mm on average with the thumb
+// pinned at its abduction limit; these reach to ~2 mm (95th percentile ~6 mm).
+export const THUMB = { dx: -0.03, u0: -0.95, uk: 0, uMin: -0.95, uMax: 0.8, depth: 0.004 };
 // picking-hand placement (fitted offline, see tools/selfcheck.mjs --fit-right)
 export const RIGHT = { beta: 35 * D2R, yaw: 25 * D2R, dx: 0.0, ky: 0.06, kz: -0.015 };
 export const rightAxes = () => ({
@@ -80,8 +86,8 @@ export class Performer {
       }
       // thumb pad on the back of the neck, opposite index/middle; it rides further round the back when the
       // fingers work the bass strings (reachable band found offline by IK sweep)
-      const u = Math.max(-0.9, Math.min(-0.1, -0.9 + 0.18 * focus)), wN = fbWidth(anchorX - 0.02) / 2;
-      tmp.set(anchorX - 0.02, -0.012 - 0.02 * Math.sqrt(1 - u * u), u * wN);
+      const u = Math.max(THUMB.uMin, Math.min(THUMB.uMax, THUMB.u0 + THUMB.uk * focus)), wN = fbWidth(anchorX + THUMB.dx) / 2;
+      tmp.set(anchorX + THUMB.dx, -0.012 - THUMB.depth * Math.sqrt(1 - u * u), u * wN);
       if (jumped) this.springs.thumb.snap(tmp); else this.springs.thumb.step(tmp, dt);
       goals.thumb = this.springs.thumb.x;
       L.solve(goals);
