@@ -2,6 +2,14 @@
 
 How to turn the 3D hand animation into realistic lesson videos with a real-looking guitarist, without copying the original YouTube Shorts.
 
+## Priority: learning first
+These videos are for learning, so **accuracy and visibility come before looks**. A clip is only usable if a student can see:
+1. **Which finger** presses each note, and on **which string and fret**.
+2. **Every technique**: slides, hammer-ons, pull-offs, bends, held bends, releases, vibrato and palm mutes.
+3. **Both hands** clearly, with nothing blurred, hidden or cut off.
+
+A beautiful clip that gets one finger wrong or hides a hammer-on is a failed clip.
+
 ## Why the output was a copy of the original
 Higgsfield's motion tools reproduce whatever you give them as the **reference video**. If the reference is the original Short, you get the Short back.
 
@@ -9,7 +17,8 @@ For lessons, use the **3D animation as the reference**, because it plays the exa
 
 ## Workflow
 1. **Record the 3D view** at https://sharvin27.github.io/GuitarTurtor/ with a screen recorder.
-   - Choose a fixed camera view: **Player** (looking down at the neck, as you see your own hands) is best for learning, and **Close** is good for detail.
+   - Choose a fixed camera view that shows the fingertips on the strings. **Close** (side-on to the fretboard) shows them most clearly; **Player** (looking down at the neck, as you see your own hands) feels natural but can hide fingertips behind the neck, so check it before using it.
+   - For technique-heavy bars, record them again at **0.5×** so every move is easy to follow.
    - Keep **follow hand** on and crop off the control bars.
    - Record one section per clip. Motion transfer accepts 4–30 s references, and clips of about 10 s keep the fingers more accurate.
 2. **Make a source image** of real hands from the same camera angle (Prompt 1).
@@ -33,12 +42,22 @@ Photorealistic over-the-shoulder view looking down at a guitarist's hands on a b
 
 ## Prompt 2: motion control
 ```
-Turn the reference animation into a realistic video of a real guitarist, for a guitar lesson. Copy the hand and finger motion from the reference exactly, frame by frame: which finger presses, which string and which fret, slides along the string, hammer-ons, bends, and every pluck of the picking hand. Keep the same camera angle and framing as the reference for the whole clip. Replace the 3D hands with the real human hands from the source image: natural skin, visible knuckles and tendons, fingertips pressing each string just behind the fret wire, fingers that aren't playing hover slightly above the strings. Real guitar detail: six strings, metal fret wires, dot inlays, strings vibrate when played. Locked-off camera, no zoom, no cuts. Soft even light, clean uncluttered teaching-video look, nothing covering the fretboard.
+Guitar lesson video. Accuracy and visibility matter more than style. Turn the reference animation into a realistic video of a real guitarist and copy the hand and finger motion from the reference exactly, frame by frame: which finger presses, which string and which fret, and the exact timing of every note.
+
+Show every technique clearly, exactly as in the reference:
+- Slide: the fingertip stays pressed on the string and glides along it to the new fret without lifting.
+- Hammer-on: a finger strikes down firmly onto the string behind the next fret, with no pick stroke.
+- Pull-off: the finger pulls slightly sideways off the string to sound the lower note, with no pick stroke.
+- Bend: the finger pushes the string across the fretboard and the string visibly moves sideways; held bend keeps it pushed; release lets it return.
+- Vibrato: small, even, repeated sideways movement of the fretting finger.
+- Picking hand: each pluck or pick stroke lands on the correct string at the same moment as the note; palm-muted notes have the side of the palm resting on the strings near the bridge.
+
+Keep both hands fully in frame and every fingertip visible on the fretboard: no fingers hidden behind the neck, no hand cut off by the frame, no motion blur on the fingers, sharp focus on the fretboard and fingertips. Fingers that aren't playing hover just above the strings. Replace the 3D hands with the real human hands from the source image: natural skin, visible knuckles and tendons, fingertips pressing just behind the fret wire. Real guitar detail: six strings, metal fret wires, dot inlays, strings vibrate when played. Keep the same camera angle and framing as the reference for the whole clip. Locked-off camera, no zoom, no cuts. Bright, even, shadow-free light on both hands. Clean, uncluttered teaching-video look.
 ```
 
 ## Negative prompt
 ```
-extra fingers, missing fingers, fused fingers, six fingers, warped or melting hands, wrong number of strings, frets merging, bent neck, blurry fretboard, camera shake, zoom, cuts, scene change, text, captions, numbers, logos, watermark, cartoon, 3D render look, plastic skin, face, original video
+extra fingers, missing fingers, fused fingers, six fingers, warped or melting hands, motion blur, fingers hidden behind the neck, hand cut off by frame, fingertips out of focus, dark shadows on hands, finger on wrong fret, skipped notes, extra notes, wrong number of strings, frets merging, bent neck, blurry fretboard, camera shake, zoom, cuts, scene change, text, captions, numbers, logos, watermark, cartoon, 3D render look, plastic skin, face, original video
 ```
 
 ## Learning variants
@@ -48,24 +67,28 @@ extra fingers, missing fingers, fused fingers, six fingers, warped or melting ha
 | Picking hand, Choo Lo | **Picking hand** view | `close-up of the picking hand fingerpicking with thumb, index, middle and ring fingers` (replaces the hand description) |
 | Picking hand, Rabba | **Picking hand** view | `close-up of the picking hand alternate picking with a pick` (replaces the hand description) |
 | One section | Scrub to the section and record only that part | Name the section in the edit, not in the prompt |
+| Technique close-up | **Close** view at 0.5×, only the bars with that technique (e.g. Choo Lo bar 1 hammer-ons, bar 2 slides; Rabba bar 10 bend) | `extreme close-up on the fretting hand; the [hammer-on / slide / bend] is the focus of the clip` |
 
 ## Suggested sections
 **Choo Lo** (`data/score-choo-lo.json`, 73 BPM)
-- Intro, bars 1–4: G string 8h9 → 9/11 → 11/13 → 13/14 → 14/16 over open B and e
+- Intro, bars 1–4: G string 8h9 → 9/11 → 11/13 → 13/14 → 14/16 over open B and e (hammer-ons in bar 1, slides in bars 2–4)
 - Intro again, bars 5–8
 - Part 2, bars 9–12: G string 9-8 followed by 2s, 4s, 6s and 8s
 
 **Rabba** (`data/score-rabba.json`, about 178 BPM)
 - Intro, bars 1–3: octave shapes (G + A string)
 - Verse, bars 4–6 and 12–14: B string 12-10-12-10-12
-- Hook, bars 7–11 and 15–19: high e 17-12-17, 19-17-19, 22 bent to 24, then 22-21-19-17-19-21
-- Outro, bars 20–21
+- Hook, bars 7–11 and 15–19: high e 17-12-17, 19-17-19, 22 bent to 24 and held with vibrato (bar 10), then 22-21-19-17-19-21 with vibrato on the last note
+- Outro, bars 20–21: high e 9-7-5-7-9-7, then pull-offs to 7 and to the open e
 
 ## Checklist for each clip
 - [ ] The reference is the 3D recording, not the original Short.
 - [ ] Same camera angle for the whole clip; no zoom or cuts.
 - [ ] Five fingers per hand, six strings, frets straight.
 - [ ] Every fretted note matches the tab: string, fret and timing.
+- [ ] The right finger plays each note (it matches the 3D hand's finger colours: index blue, middle green, ring yellow, pinky red).
+- [ ] Every technique in the tab is visible: slides keep the finger down, hammer-ons and pull-offs have no pick stroke, bends visibly push the string, vibrato is visible.
+- [ ] All fingertips stay visible: none hidden behind the neck, no motion blur, both hands fully in frame.
 - [ ] Text, tab and audio are added in the edit, not generated.
 
 ## Sources
