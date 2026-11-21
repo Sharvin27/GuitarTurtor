@@ -32,6 +32,7 @@ Self-check result (mm): Choo Lo mean 0.10 / max 0.48; Rabba mean 0.34 / max 3.09
 ## Docs
 - `RESEARCH.md` — hand models, fingering algorithms, joint biomechanics, related projects (with links).
 - `PLAN.md` — architecture and priority list.
+- `docs/HIGGSFIELD.md` — how to turn the 3D animation into realistic lesson videos with Higgsfield (workflow, prompts, checklist).
 
 ## Credits
 - Hand models: WebXR Input Profiles generic hands, © 2019 Amazon and contributors, MIT (`assets/WEBXR-ASSETS-LICENSE.md`, `assets/CREDITS.md`). Embedded as base64 in `js/hand-assets.js`.
