@@ -61,22 +61,26 @@
     "./js/audio-chords.js": "./js/audio-chords.js?v=5e6a940615",
     "./js/chord-agreement.js": "./js/chord-agreement.js?v=084f95c378",
     "./js/chordpanel.js": "./js/chordpanel.js?v=3c997c3bd6",
+    "./js/chords-mode.js": "./js/chords-mode.js?v=73a69672c9",
+    "./js/chordsong.js": "./js/chordsong.js?v=9315aec1dd",
     "./js/fingering.js": "./js/fingering.js?v=f432b99663",
     "./js/guitar.js": "./js/guitar.js?v=b2035c0bb4",
     "./js/hand-assets.js": "./js/hand-assets.js?v=734fe538b3",
     "./js/hand.js": "./js/hand.js?v=12a1c35fad",
     "./js/harmony.js": "./js/harmony.js?v=c706b78929",
     "./js/learn.js": "./js/learn.js?v=2d95b0b374",
-    "./js/main.js": "./js/main.js?v=5c4e9e99f6",
+    "./js/main.js": "./js/main.js?v=9e18b896e2",
     "./js/markers.js": "./js/markers.js?v=3e79f88c05",
-    "./js/performer.js": "./js/performer.js?v=c481f18390",
-    "./js/song-audio.js": "./js/song-audio.js?v=bebed89fbe",
+    "./js/performer.js": "./js/performer.js?v=389d2fd5c0",
+    "./js/song-audio.js": "./js/song-audio.js?v=508927f5b5",
     "./js/songmaker.js": "./js/songmaker.js?v=853b4fb3f6",
+    "./js/strumdetect.js": "./js/strumdetect.js?v=1f8d2fa78a",
+    "./js/strumhand.js": "./js/strumhand.js?v=ddc20ea49f",
     "./js/subdivide.js": "./js/subdivide.js?v=94d1f9485e",
-    "./js/synth.js": "./js/synth.js?v=2f513eadac",
+    "./js/synth.js": "./js/synth.js?v=4047f3e203",
     "./js/tabstrip.js": "./js/tabstrip.js?v=93e7f68297",
     "./js/theory.js": "./js/theory.js?v=c9eb754cfc",
-    "./js/timeline.js": "./js/timeline.js?v=0698ba9c14",
+    "./js/timeline.js": "./js/timeline.js?v=9561ff5a67",
     "./chords/chordnamer.js": "./chords/chordnamer.js?v=7a98aa55ed"
   }
 }
@@ -84,8 +88,9 @@
 <link rel="modulepreload" href="js/songmaker.js?v=853b4fb3f6">
 <link rel="modulepreload" href="js/chord-agreement.js?v=084f95c378">
 <link rel="modulepreload" href="chords/chordnamer.js?v=7a98aa55ed">
-<link rel="modulepreload" href="js/song-audio.js?v=bebed89fbe">
+<link rel="modulepreload" href="js/song-audio.js?v=508927f5b5">
 <link rel="modulepreload" href="js/audio-chords.js?v=5e6a940615">
+<link rel="modulepreload" href="js/strumdetect.js?v=1f8d2fa78a">
 </head>
 <body>
 <main>
@@ -157,6 +162,7 @@
 import { decodeAudio, transcribe, toScore, loadChordShapes, reconcileChords } from './js/songmaker.js';
 import { saveSongAudio, deleteSongAudio, shiftScore } from './js/song-audio.js';
 import { detectAudioChords } from './js/audio-chords.js';
+import { strumForScore, loadStrumPatterns } from './js/strumdetect.js';
 const $ = id => document.getElementById(id);
 let yt = null, videoId = '', audioBlob = null, audioLabel = '', last = null, rec = null, busy = false;
 
@@ -278,6 +284,9 @@ async function writeTab() {
     const localScore = toScore(notes, 0, 0.75, shapes);
     msg('audMsg', 'Listening for chords…'); bar(0);
     localScore.chords = reconcileChords(await detectAudioChords(y, { progress: bar }), localScore.notes);
+    msg('audMsg', 'Listening for the strum pattern…'); await new Promise(r => setTimeout(r, 30));
+    try { const strum = strumForScore(y, localScore.chords, await loadStrumPatterns()); if (strum) localScore.strum = strum; }   // optional: omitted when not strummed
+    catch (e) { console.warn('strum detection failed:', e); }
     const score = shiftScore(localScore, offset);
     const title = $('name').value.trim() || audioLabel.replace(/\.\w+$/, '') || 'My song';
     const id = 'u-' + slug(title) + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);

@@ -163,7 +163,7 @@ async function loadChordSong(cs) {
 }
 
 async function loadSong(key) {
-  chordLoad++; chords.deactivate();
+  if (typeof chords !== 'undefined') { chordLoad++; chords.deactivate(); }   // the playback test harness loads main.js without chord mode
   const load = ++songLoad;
   const song = SONGS[key];
   songKey = key;

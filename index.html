@@ -59,22 +59,27 @@
     "./js/audio-chords.js": "./js/audio-chords.js?v=5e6a940615",
     "./js/chord-agreement.js": "./js/chord-agreement.js?v=084f95c378",
     "./js/chordpanel.js": "./js/chordpanel.js?v=3c997c3bd6",
+    "./js/chords-mode.js": "./js/chords-mode.js?v=73a69672c9",
+    "./js/chordsong.js": "./js/chordsong.js?v=9315aec1dd",
     "./js/fingering.js": "./js/fingering.js?v=f432b99663",
     "./js/guitar.js": "./js/guitar.js?v=b2035c0bb4",
     "./js/hand-assets.js": "./js/hand-assets.js?v=734fe538b3",
     "./js/hand.js": "./js/hand.js?v=12a1c35fad",
     "./js/harmony.js": "./js/harmony.js?v=c706b78929",
     "./js/learn.js": "./js/learn.js?v=2d95b0b374",
-    "./js/main.js": "./js/main.js?v=5c4e9e99f6",
+    "./js/main.js": "./js/main.js?v=9e18b896e2",
     "./js/markers.js": "./js/markers.js?v=3e79f88c05",
-    "./js/performer.js": "./js/performer.js?v=c481f18390",
-    "./js/song-audio.js": "./js/song-audio.js?v=bebed89fbe",
+    "./js/performer.js": "./js/performer.js?v=389d2fd5c0",
+    "./js/song-audio.js": "./js/song-audio.js?v=508927f5b5",
     "./js/songmaker.js": "./js/songmaker.js?v=853b4fb3f6",
+    "./js/strumdetect.js": "./js/strumdetect.js?v=1f8d2fa78a",
+    "./js/strumhand.js": "./js/strumhand.js?v=ddc20ea49f",
     "./js/subdivide.js": "./js/subdivide.js?v=94d1f9485e",
-    "./js/synth.js": "./js/synth.js?v=2f513eadac",
+    "./js/synth.js": "./js/synth.js?v=4047f3e203",
     "./js/tabstrip.js": "./js/tabstrip.js?v=93e7f68297",
     "./js/theory.js": "./js/theory.js?v=c9eb754cfc",
-    "./js/timeline.js": "./js/timeline.js?v=0698ba9c14",
+    "./js/timeline.js": "./js/timeline.js?v=9561ff5a67",
+    "./chords/strum_model.js": "./chords/strum_model.js?v=4ca36a75ee",
     "./chords/chordnamer.js": "./chords/chordnamer.js?v=7a98aa55ed"
   }
 }
@@ -83,15 +88,19 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js" crossorigin>
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js" crossorigin>
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js" crossorigin>
-<link rel="modulepreload" href="js/main.js?v=5c4e9e99f6">
+<link rel="modulepreload" href="js/main.js?v=9e18b896e2">
 <link rel="modulepreload" href="js/guitar.js?v=b2035c0bb4">
 <link rel="modulepreload" href="js/fingering.js?v=f432b99663">
-<link rel="modulepreload" href="js/timeline.js?v=0698ba9c14">
+<link rel="modulepreload" href="js/timeline.js?v=9561ff5a67">
 <link rel="modulepreload" href="js/hand.js?v=12a1c35fad">
 <link rel="modulepreload" href="js/subdivide.js?v=94d1f9485e">
-<link rel="modulepreload" href="js/performer.js?v=c481f18390">
+<link rel="modulepreload" href="js/performer.js?v=389d2fd5c0">
+<link rel="modulepreload" href="js/strumhand.js?v=ddc20ea49f">
 <link rel="modulepreload" href="js/hand-assets.js?v=734fe538b3">
-<link rel="modulepreload" href="js/synth.js?v=2f513eadac">
+<link rel="modulepreload" href="js/synth.js?v=4047f3e203">
+<link rel="modulepreload" href="js/chords-mode.js?v=73a69672c9">
+<link rel="modulepreload" href="js/chordsong.js?v=9315aec1dd">
+<link rel="modulepreload" href="chords/strum_model.js?v=4ca36a75ee">
 <link rel="modulepreload" href="js/learn.js?v=2d95b0b374">
 <link rel="modulepreload" href="js/tabstrip.js?v=93e7f68297">
 <link rel="modulepreload" href="js/markers.js?v=3e79f88c05">
@@ -100,7 +109,7 @@
 <link rel="modulepreload" href="js/harmony.js?v=c706b78929">
 <link rel="modulepreload" href="js/chord-agreement.js?v=084f95c378">
 <link rel="modulepreload" href="chords/chordnamer.js?v=7a98aa55ed">
-<link rel="modulepreload" href="js/song-audio.js?v=bebed89fbe">
+<link rel="modulepreload" href="js/song-audio.js?v=508927f5b5">
 </head>
 <body>
 <div id="stage"></div>
@@ -128,6 +137,6 @@
 </div>
 <script src="js/yt.js?v=080657586f"></script>
 <script src="js/user-songs.js?v=48d8d05ec1"></script>
-<script type="module" src="js/main.js?v=5c4e9e99f6"></script>
+<script type="module" src="js/main.js?v=9e18b896e2"></script>
 </body>
 </html>
