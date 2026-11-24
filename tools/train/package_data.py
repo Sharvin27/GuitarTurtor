@@ -1,4 +1,4 @@
-"""Build GuitarTurtor/train/ folder + zip for Google Drive. LOCAL ONLY - audio is the user's private data, never commit.
+"""(Superseded by tools/dataset/package.py: manifest + lesson-video labels + priority songs.) Build GuitarTurtor/train/ folder + zip for Google Drive. LOCAL ONLY - audio is the user's private data, never commit.
 usage: python package_data.py [--with-audio] [--guitarset]
   out/GuitarTurtor/train/pairs/<song>/{tab.json,meta.json[,audio]}; guitarset/annotation.zip (CC BY 4.0) if --guitarset
 Audio is included only with --with-audio AND only if the file already exists locally."""

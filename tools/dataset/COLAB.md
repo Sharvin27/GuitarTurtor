@@ -10,12 +10,22 @@ Drive, never share the folder, never commit it. Labels (`tools/dataset/labels/*.
   string 0 = high e, `t` = onset seconds in the video's audio, frets relative to capo, tuning/capo in the manifest.
 - `audio/<id>.m4a|mp3` (only `--with-audio`): the video's own audio track, same timeline as `t`.
 - Choo Lo labels are valid only up to `until` = 38.7 s (rest unreviewed).
+- Lesson labels: pages that failed the gate were dropped; their time spans are in `exclude` (manifest and
+  `label.source.exclude`) and the notebook masks them. Each note has `ev` = basic-pitch evidence per pitch.
+- Known reader error modes left in kept labels (by-eye spot checks, ~95% of events right): 6<->8 digit
+  confusions, a few missed notes, tied "(n)" notes read as new attacks, rare wrong string. Treat as
+  slightly noisy labels (the notebook drops conf < 0.7 / flagged notes; consider also `min(ev) < 0.25`).
 
-## 1. Build the zip (local, Windows)
+## 1. Rebuild the dataset / zip (local, Windows)
 ```
 cd D:\sharvin1\Projects\Music\guitar3d
-C:/Users/sharv/anaconda3/python.exe -I tools/dataset/build.py manifest          # refresh manifest + labels from debug/
-C:/Users/sharv/anaconda3/python.exe -I tools/dataset/package.py --with-audio --guitarset
+set PY=C:/Users/sharv/anaconda3/python.exe
+%PY% -I tools/dataset/search.py --per 10 [--add]       # yt-dlp search -> cache/candidates.jsonl
+%PY% -I tools/dataset/build.py run --jobs 4 [--after K] # download + read_tabs.py --debug (resumable, ~2 CPU-min/video)
+D:/sharvin1/Projects/Music/pitch-model/venv/Scripts/python.exe tools/dataset/verify.py   # basic-pitch agreement
+%PY% -I tools/dataset/build.py manifest                 # gate -> manifest.jsonl + labels/
+%PY% -I tools/dataset/spot.py <id>                      # 2 random kept pages to check by eye (--record "...")
+%PY% -I tools/dataset/package.py --with-audio --guitarset
 ```
 -> `tools/dataset/out/GuitarTurtor_train.zip` (labels + manifest + audio + GuitarSet annotation.zip, ~40 MB + audio).
 Without `--with-audio` you get a labels-only zip (enough for Part A, the string chooser).
