@@ -69,5 +69,5 @@ def annotate_audio(events, assign, aud, thr=0.2):
             n["sal"] = round(float(sal), 3)
             if sal < thr:
                 _flag(n, "audio", 0.6)
-            elif sal > 0.6:
-                n["conf"] = min(1.0, n.get("conf", 1.0) * 1.1)
+            elif sal > 0.5:                 # the audio has this pitch at this onset: reading confirmed
+                n["conf"] = max(n.get("conf", 1.0), 0.85)

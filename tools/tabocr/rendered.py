@@ -153,6 +153,15 @@ def staff_components(gray, staff, pol, ys, bars, ascii_mode=False, minx=None):
                 sd["s"] = int(np.argmin(np.abs(ysa - sd["cy"])))
                 comps.append(sd)
                 rest = m & ~ndi.binary_dilation(stroke, iterations=1)
+                # inside the digit's own columns keep every pixel: the line ends there and must not bite the digit
+                ext = np.array([(np.flatnonzero(rest[:, j])[-1] - np.flatnonzero(rest[:, j])[0] + 1) if rest[:, j].any() else 0
+                                for j in range(w)])
+                if ext.max() > 0:
+                    for a_, b_ in _runs(ext >= 0.55 * ext.max()):     # each digit separately
+                        rows_ = np.flatnonzero(rest[:, a_:b_].any(1))
+                        if len(rows_):
+                            r_a, r_b = rows_.min(), rows_.max() + 1
+                            rest[r_a:r_b, a_:b_] = m[r_a:r_b, a_:b_]
                 l2, n2 = ndi.label(rest, structure=np.ones((3, 3), bool))
                 for k2, sl2 in enumerate(ndi.find_objects(l2)):
                     work.append(((r0 + sl2[0].start, c0 + sl2[1].start), l2[sl2] == k2 + 1, depth + 1))
@@ -339,6 +348,8 @@ def classify_comps(comps, ocr_mod, log=None, sim=0.93, ntess=3, ascii_mode=False
         order = np.argsort(-S)
         best = int(order[0]); second = int(order[1])
         c = float(np.clip((S[best] - S[second]) / max(S[best], 1e-6), 0, 1))
+        if len(g) >= 5 and T[best] >= 0.5:      # a frequent shape that Tesseract agrees on is not in doubt
+            c = max(c, 0.9)
         for i in g:
             labels[i] = CH[best]; conf[i] = c
         info[find(g[0])] = (CH[best], c, len(g), CH[second])
@@ -394,7 +405,7 @@ def assemble(info, comps, labels, confs, arcs):
             slides.append(c); continue
         if c.get("contrast", 1.0) < 0.4:       # ghost digit of a fading page: not read
             continue
-        if l == "7" and c.get("fill", 0) > 0.375 and c["w"] > 0.45:      # an eighth rest is a heavier "7"
+        if l == "7" and c.get("fill", 0) > 0.375 and (c["w"] > 0.45 or c["h"] > 0.89):      # an eighth rest is a heavier "7"
             continue
         bystr.setdefault(c["s"], []).append((c, l, cf * min(1.0, 1.4 * c.get("contrast", 1.0))))
     for s, items in bystr.items():
