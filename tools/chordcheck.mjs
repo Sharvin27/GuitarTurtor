@@ -4,9 +4,13 @@
 //   (a) library progressions (every common chord, shapes 0-2, several strum patterns), and
 //   (b) songs detected from audio: synthetic strummed recordings -> js/audio-chords.js -> js/strumdetect.js
 //       (strumForScore + strumProgression) -> buildChordSong, i.e. the "play it as recorded" path.
+//   (c) mixed songs (tools/fixtures/mixed-song.json: strummed bars + single notes + tab chords, buildMixedTimeline).
 //   node tools/chordcheck.mjs            (exit code 1 on any mismatch)
 import fs from 'node:fs';
-import { buildChordSong } from '../js/chordsong.js';
+import { buildChordSong, canonicalSymbol } from '../js/chordsong.js';
+import { buildMixedTimeline } from '../js/songchords.js';
+import { normalizeScore, solveFingering } from '../js/fingering.js';
+import { prepareTimeline } from '../js/timeline.js';
 import { diagramSVG } from '../js/chords-mode.js';
 import { detectAudioChords } from '../js/audio-chords.js';
 import { strumForScore, strumProgression } from '../js/strumdetect.js';
@@ -68,6 +72,49 @@ for (const [pattern, bpm, prog] of [['basic', 90, ['G', 'D', 'Em', 'C']], ['folk
   const cs = buildChordSong(sp.prog, sp.pattern, sp.bpm, { patterns: pats });
   verify(cs, `audio ${pattern}@${bpm}`); songs++;
   console.log(`audio ${pattern}@${bpm}: detected ${sp.prog.map(p => p.symbol + 'x' + p.bars).join(' ')} | pattern ${sp.pattern.id} @ ${sp.bpm} bpm`);
+}
+// (c) mixed songs (one timeline: strummed bars + single notes, js/songchords.js buildMixedTimeline): the chord shown while a
+//     chord sounds (span name + diagram) == the fretting hand's event notes == the strummed strings/frets == the synth notes,
+//     and no chord is shown over the single-note bars
+{
+  const fx = JSON.parse(fs.readFileSync(new URL('./fixtures/mixed-song.json', import.meta.url)));
+  for (const mode of ['pick', 'fingers']) {
+    const tab = prepareTimeline(solveFingering(normalizeScore(fx.score)), mode);
+    const mix = buildMixedTimeline({ score: fx.score, events: tab, mode, track: { chords: fx.score.chords, strum: fx.score.strum }, lib, pats });
+    const ctx = `mixed ${mode}`;
+    checks++; if (!mix.mixed) { bad(ctx, 'not mixed'); continue; }
+    mix.spans.forEach((sp, k) => {
+      const where = `${ctx} span ${k} ${sp.symbol}`, want = chordPcs(canonicalSymbol(sp.symbol || ''));
+      const frets = [0, 1, 2, 3, 4, 5].map(sl => { const n = sp.notes.find(x => x.s === 5 - sl); return n ? n.f : 'x'; });
+      checks++; if (!want) return bad(where, 'symbol not in chord_library.json');
+      const snd = frets.map((f, s) => (isX(f) ? null : (OPEN_LOW[s] + f) % 12)).filter(p => p != null);
+      checks++; if (snd.some(p => !want.pcs.has(p)) || !snd.includes(want.root)) bad(where, `voicing ${frets} does not spell it`);
+      const svg = diagramSVG({ notes: sp.notes, muted: sp.muted, barre: sp.barre }), open = (svg.match(/fill="none"/g) || []).length, mutes = (svg.match(/<path /g) || []).length;
+      checks++; if (open !== frets.filter(f => f === 0).length || mutes !== frets.filter(isX).length) bad(where, `diagram open ${open} mutes ${mutes} vs ${frets}`);
+      // fretting hand: every strummed event inside the span holds exactly this voicing
+      for (const ev of mix.events.filter(e => e.strummed && e.t >= sp.t0 - 1e-6 && e.t < sp.t1 - 1e-6 && e.notes.length >= 3)) {
+        const m = new Map(ev.notes.map(n => [5 - n.s, n.f]));
+        frets.forEach((f, s) => { checks++; if (isX(f) ? m.has(s) : m.get(s) !== f) bad(where, `hand t=${ev.t.toFixed(2)} string ${s}: ${m.get(s)} vs ${f}`); });
+      }
+      // strokes: only the voicing's strings and frets (open strings on a release stroke before a shape change); synth notes in the chord
+      for (const st of mix.strokes.filter(s => s.t >= sp.t0 - 0.03 && s.t < sp.t1 - 0.03)) {
+        st.strings.forEach((s, i) => {
+          checks += 2;
+          if (st.release) { if (st.frets[i] !== 0) bad(where, `release stroke fret ${st.frets[i]}`); return; }
+          if (isX(frets[s]) || st.frets[i] !== frets[s]) bad(where, `stroke t=${st.t.toFixed(2)} string ${s} fret ${st.frets[i]} vs ${frets}`);
+          if (!want.pcs.has((OPEN_LOW[s] + st.frets[i]) % 12)) bad(where, `synth note ${OPEN_LOW[s] + st.frets[i]} not in ${sp.symbol}`);
+        });
+      }
+    });
+    // single-note bars: no chord span, no strokes, the synth plays them as notes
+    for (const b of mix.bars.filter(b => b.kind === 'notes')) {
+      checks += 2;
+      if (mix.spans.some(sp => sp.t0 < b.t1 - 0.05 && sp.t1 > b.t0 + 0.05)) bad(ctx, `chord shown over note bar ${b.m}`);
+      if (mix.strokes.some(st => st.t >= b.t0 && st.t < b.t1 - 0.05)) bad(ctx, `strokes in note bar ${b.m}`);
+    }
+    songs++;
+    console.log(`${ctx}: ${mix.bars.map(b => b.kind).join(' ')} | chords ${mix.spans.map(s => s.symbol + '(' + s.source + ')').join(' ')}`);
+  }
 }
 console.log(`${songs} chord songs, ${checks} checks, ${fails.length} mismatches`);
 fails.slice(0, 30).forEach(f => console.log('  FAIL ' + f));

@@ -49,11 +49,11 @@ export function prepareTimeline(events, mode = 'fingers') {
     ev.prevUse = FINGER_KEYS.map((_, k) => { for (let j = i - 1; j >= 0; j--) if (events[j].byFinger[k]) return j; return -1; });
     ev.nextUse = FINGER_KEYS.map((_, k) => { for (let j = i + 1; j < events.length; j++) if (events[j].byFinger[k]) return j; return -1; });
   });
-  // picking-hand plucks (legato notes are not picked)
+  // picking-hand plucks (legato notes are not picked; strummed events of a mixed song belong to the strum path)
   const plucks = { thumb: [], index: [], middle: [], ring: [], pick: [] };
   events.forEach((ev, i) => {
     const gapPrev = i ? ev.t - events[i - 1].t : 1;
-    if (ev.legato) return;
+    if (ev.legato || ev.strummed) return;
     if (mode === 'pick') {
       // alternate picking: down on the beat grid, up in between. Use the 16th grid when the line is dense,
       // otherwise the 8th grid (down on beats, up on "and"s).

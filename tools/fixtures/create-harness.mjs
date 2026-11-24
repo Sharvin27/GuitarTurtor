@@ -1,10 +1,10 @@
 // Run the actual create.html controller with local audio/model/storage doubles; no network or microphone.
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { toScore, reconcileChords } from '../../js/songmaker.js';
+import { toScore, reconcileChords, findTrim } from '../../js/songmaker.js';
 import { shiftScore } from '../../js/song-audio.js';
 
-export function createHarness({ saved = true, audioSaved = true, notes = [{ t: .2, e: .7, p: 64, a: 1 }], chords = [{ t0: 0, t1: 1, name: 'C', conf: .9 }] } = {}) {
+export function createHarness({ saved = true, audioSaved = true, notes = [{ t: .2, e: .7, p: 64, a: 1 }], chords = [{ t0: 0, t1: 1, name: 'C', conf: .9 }], audio = null } = {}) {
   const elements = new Map(), songs = new Map(), blobs = new Map(), navigation = [];
   const element = () => ({ value: '', textContent: '', checked: true, hidden: false, disabled: false,
     style: {}, firstChild: { style: {} }, children: [], classList: { add() {}, remove() {} },
@@ -27,7 +27,8 @@ export function createHarness({ saved = true, audioSaved = true, notes = [{ t: .
     Blob, Date, Math, console, URL, setTimeout, setInterval, clearInterval, performance,
     confirm: () => true, location: { assign: url => navigation.push(url) },
     UserSongs: { list: () => [...songs.values()], save(s) { if (saved) songs.set(s.id, s); return saved; }, remove(id) { return songs.delete(id); } },
-    decodeAudio: async () => new Float32Array(22050),
+    decodeAudio: async () => audio || new Float32Array(22050), findTrim,
+    trimmedWav: async (blob, start, end) => new Blob([`trimmed ${start.toFixed(2)}-${end.toFixed(2)}`]),
     transcribe: async () => { calls++; return { notes, engine: 'fixture' }; },
     toScore, reconcileChords, shiftScore, loadChordShapes: async () => null,
     detectAudioChords: async () => chords,

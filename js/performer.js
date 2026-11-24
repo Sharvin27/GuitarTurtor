@@ -84,7 +84,7 @@ export class Performer {
     const L = this.left, cache = new Map(), V = THREE.Vector3;
     const DX = [-0.012, -0.006, 0, 0.006], DKZ = [-0.012, -0.006, 0, 0.006, 0.012], DKY = [-0.012, 0, 0.012], DA = [-8, 0, 8].map(d => d * D2R);
     for (const ev of events) {
-      if (ev.hand) continue;
+      if (ev.hand || (events.mixed && !ev.strummed)) continue;   // mixed songs: only the strummed (chord) events are tuned
       const key = ev.pos + '|' + ev.notes.map(n => `${n.s}.${n.f}.${n.finger}`).join(',') + (ev.barre ? 'b' : '');
       if (cache.has(key)) { ev.hand = cache.get(key); continue; }
       const goals = {};
@@ -181,13 +181,26 @@ export class Performer {
     this.pick.visible = false;
     if (R) {
       const { l: lR, f: fR } = rightAxes();
-      const sg = this.events.strum ? this.events.strum.at(T) : null;   // chord strumming (js/chordsong.js)
+      // chord strumming (js/chordsong.js); in a mixed song (js/songchords.js buildMixedTimeline) only inside the strummed
+      // bars' windows: null elsewhere, and the tab notes are picked below
+      const sg = this.events.strum ? this.events.strum.at(T) : null;
       this.strumState = sg;
+      if (!sg || sg.blend >= 1) for (const k in this.rsprings) this.rsprings[k].from = null;
+      // approach into strummed bars (sg.blend < 1): the hand eases in on its springs from where the picking left it; on
+      // the path itself it is exact (crossing times matter) and the springs are kept on it, so picking resumes from there
+      const ease = (sp, v) => {
+        if (!sg || sg.blend == null) return v;
+        if (jumped || sg.blend >= 1) { sp.snap(v); sp.from = null; return v; }
+        if (!sp.from) sp.from = sp.x.clone();                       // where the picking left the hand
+        const u = sg.blend * sg.blend * (3 - 2 * sg.blend);
+        sp.snap(v.lerpVectors(sp.from, v, u));
+        return v;
+      };
       if (sg && this.mode === 'pick') {
         // pick held in the grip; the pick tip follows the strum path exactly (no spring: crossing times matter),
         // and the wrist swings with the sweep (the tip stays on the path, the pick direction tilts)
         this._pickPose();
-        tmp.set(sg.x, sg.y, sg.z);
+        ease(this.rsprings.pick, tmp.set(sg.x, sg.y, sg.z));
         const dirZ = Math.max(-0.7, Math.min(1.0, 0.25 - 14 * (sg.z - STRUM_Z0)));
         R.setPlacementAlign(this.pickDirArm, new THREE.Vector3(0, -1, dirZ), R.axesArm.f, fR.clone().setY(0), this.pickTipArm, tmp);
         this.pick.tip.copy(this.pickTipArm).applyMatrix4(R.place);
@@ -198,10 +211,10 @@ export class Performer {
         // middle/ring trail the index loosely
         const zc = stringZ(2.5, PLUCK_X);
         R.setPlacement(new THREE.Vector3(PLUCK_X + RIGHT.dx + (sg.x - STRUM.x), stringY(PLUCK_X) + RIGHT.ky + 0.4 * (sg.y - stringY(sg.x)), zc + RIGHT.kz + 0.55 * (sg.z - STRUM_Z0)), lR, fR);
-        const goals = { index: new THREE.Vector3(sg.x, sg.y, sg.z) };
-        goals.thumb = new THREE.Vector3(sg.x - 0.022, sg.y + 0.010, sg.z - sg.sg * 0.006);
-        goals.middle = new THREE.Vector3(sg.x + 0.003, sg.y + 0.007, sg.z + 0.008);
-        goals.ring = new THREE.Vector3(sg.x + 0.010, sg.y + 0.009, sg.z + 0.015);
+        const goals = { index: ease(this.rsprings.index, new THREE.Vector3(sg.x, sg.y, sg.z)) };
+        goals.thumb = ease(this.rsprings.thumb, new THREE.Vector3(sg.x - 0.022, sg.y + 0.010, sg.z - sg.sg * 0.006));
+        goals.middle = ease(this.rsprings.middle, new THREE.Vector3(sg.x + 0.003, sg.y + 0.007, sg.z + 0.008));
+        goals.ring = ease(this.rsprings.ring, new THREE.Vector3(sg.x + 0.010, sg.y + 0.009, sg.z + 0.015));
         goals.pinky = goals.ring.clone().add(new THREE.Vector3(0.012, 0.004, 0.008));
         R.solve(goals);
       } else if (this.mode === 'pick') {

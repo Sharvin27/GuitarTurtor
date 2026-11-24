@@ -109,7 +109,11 @@ function encodeWav(buf) {
 export async function renderSong(events, mode, seconds) {
   const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const ctx = new Ctx(1, Math.ceil(SR * seconds), SR);
-  const dest = buildChain(ctx, mode);
+  addNotes(ctx, buildChain(ctx, mode), events, mode);
+  return encodeWav(await ctx.startRendering());
+}
+
+function addNotes(ctx, dest, events, mode) {
   events.forEach((e, i) => {
     const next = events[i + 1], prev = events[i - 1];
     const legatoIn = prev && (prev.slide || prev.ham || prev.pull);
@@ -131,7 +135,6 @@ export async function renderSong(events, mode, seconds) {
       }, mode);
     });
   });
-  return encodeWav(await ctx.startRendering());
 }
 
 // ---------- chord strumming ----------
@@ -157,7 +160,21 @@ function chuck(ctx, dest, t, vel) {
 export async function renderStrokes(strokes, mode, seconds, opts = {}) {
   const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const ctx = new Ctx(1, Math.ceil(SR * seconds), SR);
-  const dest = buildChain(ctx, mode === 'pick' ? 'pick' : 'fingers');
+  addStrokes(ctx, buildChain(ctx, mode === 'pick' ? 'pick' : 'fingers'), strokes, mode);
+  if (opts.click) {
+    const { bpm, beatsPerBar, startT = 0 } = opts.click, beat = 60 / bpm;
+    for (let b = 0, t = startT; t < seconds - 0.1; b++, t = startT + b * beat) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = b % beatsPerBar === 0 ? 1500 : 1000;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(b % beatsPerBar === 0 ? 0.16 : 0.1, t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.06);
+    }
+  }
+  return encodeWav(await ctx.startRendering());
+}
+
+function addStrokes(ctx, dest, strokes, mode) {
   strokes.forEach((st, i) => {
     const vel = st.velocity ?? 0.7;
     if (st.muted === 'dead') { chuck(ctx, dest, Math.max(0, st.t), vel * 0.8); return; }
@@ -169,19 +186,19 @@ export async function renderStrokes(strokes, mode, seconds, opts = {}) {
       let end = ts + 2.2;
       if (again) end = Math.min(end, again.t + again.offsets[again.strings.indexOf(sl)]);
       if (change) end = Math.min(end, change.t + 0.03);
+      if (Number.isFinite(st.ringUntil)) end = Math.min(end, st.ringUntil);   // mixed songs: stop when the notes take over
       const fret = st.frets ? st.frets[k] : 0;
       voice(ctx, dest, Math.max(0, ts), OPEN_LOW[sl] + fret, Math.max(0.1, end - ts), { pm: !!st.muted, vel: 0.35 + 0.65 * vel * (st.dir === 'U' ? 0.9 : 1) }, mode === 'pick' ? 'pick' : 'fingers');
     });
   });
-  if (opts.click) {
-    const { bpm, beatsPerBar, startT = 0 } = opts.click, beat = 60 / bpm;
-    for (let b = 0, t = startT; t < seconds - 0.1; b++, t = startT + b * beat) {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = 'square'; o.frequency.value = b % beatsPerBar === 0 ? 1500 : 1000;
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(b % beatsPerBar === 0 ? 0.16 : 0.1, t + 0.002);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.06);
-    }
-  }
+}
+
+/** a song that mixes single notes (tab events, as renderSong) and strummed bars (strokes, as renderStrokes) in one take */
+export async function renderMixed(events, strokes, mode, seconds) {
+  const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ctx = new Ctx(1, Math.ceil(SR * seconds), SR);
+  const dest = buildChain(ctx, mode === 'pick' ? 'pick' : 'fingers');
+  addNotes(ctx, dest, events, mode === 'pick' ? 'pick' : 'fingers');
+  addStrokes(ctx, dest, strokes, mode);
   return encodeWav(await ctx.startRendering());
 }

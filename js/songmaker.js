@@ -24,6 +24,68 @@ export async function decodeAudio(blob) {
   return out;
 }
 
+
+// ---------- silence trimming ----------
+// Screen / tab captures, mic takes and uploads often start with seconds of loading or silence (and end with some).
+// findTrim: the first SUSTAINED musical onset = frames well above the noise floor AND pitched (autocorrelation peak) for at
+// least `sustain` s; the cut starts `pre` s before it (extended back over quieter notes joined to it). The end keeps the
+// decay of the last note plus `tail` s. Only quiet audio is ever cut; nothing is trimmed below `minTrim` s.
+const pct = (a, p) => { const s = Float64Array.from(a).sort(); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : -120; };
+function pitched(y, i0, W, sr) {
+  const l0 = Math.max(1, Math.floor(sr / 1100)), l1 = Math.ceil(sr / 75);   // guitar fundamentals ~80-1000 Hz
+  let r0 = 0; for (let i = 0; i < W; i++) r0 += y[i0 + i] * y[i0 + i];
+  if (r0 <= 0) return 0;
+  let best = 0;
+  for (let l = l0; l <= l1; l++) {
+    let r = 0; for (let i = 0; i < W - l; i++) r += y[i0 + i] * y[i0 + i + l];
+    best = Math.max(best, r / r0 * W / (W - l));
+  }
+  return best;
+}
+/** @returns {{start:number, end:number, dur:number, trimmed:boolean}} seconds; trimmed = there is something worth cutting */
+export function findTrim(y, sr = SR, { hop = 0.02, win = 0.04, sustain = 0.3, pre = 0.2, tail = 0.5, minTrim = 0.5, minTail = 1.0 } = {}) {
+  const dur = y.length / sr, none = { start: 0, end: dur, dur, trimmed: false };
+  const H = Math.round(hop * sr), W = Math.round(win * sr), n = Math.floor((y.length - W) / H) + 1;
+  if (n < 20) return none;
+  const db = new Float64Array(n);
+  for (let k = 0; k < n; k++) { let e = 0; for (let i = 0; i < W; i++) { const v = y[k * H + i]; e += v * v; } db[k] = 10 * Math.log10(e / W + 1e-12); }
+  const floor = pct(db, 0.05), peak = pct(db, 0.98);
+  if (peak < -60 || peak - floor < 15) return none;                    // all silence, or no quiet part to cut
+  const thr = Math.max(floor + 15, peak - 35, -60), quiet = floor + 6;
+  const need = Math.ceil(sustain / hop), pitch = new Map();
+  const musical = k => db[k] > thr && (pitch.has(k) ? pitch.get(k) : (pitch.set(k, pitched(y, k * H, W, sr) > 0.35), pitch.get(k)));
+  let on = -1;
+  for (let k = 0; k + need <= n && on < 0; k++) {
+    if (!musical(k)) continue;
+    let c = 0; for (let j = k; j < k + need; j++) if (musical(j)) c++;
+    if (c >= 0.8 * need) on = k;
+  }
+  if (on < 0) return none;
+  // quieter notes joined to the onset belong to the music (gaps up to 0.1 s)
+  for (let k = on - 1, gap = 0; k >= 0; k--) { if (db[k] > quiet) { on = k; gap = 0; } else if (++gap > 0.1 / hop) break; }
+  let last = n - 1; while (last > on && db[last] <= quiet) last--;
+  const start = Math.max(0, on * H / sr - pre), end = Math.min(dur, (last * H + W) / sr + tail);
+  const s = start >= minTrim ? +start.toFixed(2) : 0, e = dur - end >= minTail ? +end.toFixed(2) : dur;
+  return { start: s, end: e, dur, trimmed: s > 0 || e < dur };
+}
+
+/** the kept part [start, end] s of a recording as a WAV Blob (mono 44.1 kHz, 16-bit), for storage with the trimmed tab */
+export async function trimmedWav(blob, start, end, sr = 44100) {
+  const ctx = new OfflineAudioContext(1, 1, sr);
+  const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+  const a = Math.max(0, Math.floor(start * sr)), b = Math.min(buf.length, Math.ceil(end * sr)), n = Math.max(0, b - a);
+  const dv = new DataView(new ArrayBuffer(44 + 2 * n));
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); dv.setUint32(4, 36 + 2 * n, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, 1, true); dv.setUint32(24, sr, true); dv.setUint32(28, 2 * sr, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  w(36, 'data'); dv.setUint32(40, 2 * n, true);
+  const chs = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
+  for (let i = 0; i < n; i++) {
+    let v = 0; for (const ch of chs) v += ch[a + i] / chs.length;
+    v = Math.max(-1, Math.min(1, v)); dv.setInt16(44 + 2 * i, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+  }
+  return new Blob([dv], { type: 'audio/wav' });
+}
 async function download(url, label, progress, done = 0, all = 1) {
   let cache = null;
   try { cache = await caches.open('songmaker-v1'); } catch { /* no Cache Storage */ }

@@ -317,7 +317,7 @@ export function initChords(ctx) {
     const set = $('cp-set');
     if (window.innerWidth > 700 && set.hidden) { set.hidden = false; $('cp-setup').setAttribute('aria-expanded', 'true'); }
     syncControls();
-    const h = document.querySelector('.learn-head'); if (h) document.documentElement.style.setProperty('--cp-head', h.offsetHeight + 'px');
+    const h = document.querySelector('.learn-head'); document.documentElement.style.setProperty('--cp-head', (h ? h.offsetHeight : 0) + 'px');
     await rebuild();
   }
   function deactivate() {
@@ -349,7 +349,7 @@ export function initChords(ctx) {
     const set = $('cp-set');
     if (window.innerWidth > 700 && set.hidden) { set.hidden = false; $('cp-setup').setAttribute('aria-expanded', 'true'); }
     syncControls();
-    const h = document.querySelector('.learn-head'); if (h) document.documentElement.style.setProperty('--cp-head', h.offsetHeight + 'px');
+    const h = document.querySelector('.learn-head'); document.documentElement.style.setProperty('--cp-head', (h ? h.offsetHeight : 0) + 'px');
   }
 
   // ---------- per-frame teaching UI ----------

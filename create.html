@@ -61,32 +61,32 @@
     "./js/audio-chords.js": "./js/audio-chords.js?v=5e6a940615",
     "./js/chord-agreement.js": "./js/chord-agreement.js?v=084f95c378",
     "./js/chordpanel.js": "./js/chordpanel.js?v=3c997c3bd6",
-    "./js/chords-mode.js": "./js/chords-mode.js?v=6ba6e58496",
+    "./js/chords-mode.js": "./js/chords-mode.js?v=be68a5ff86",
     "./js/chordsong.js": "./js/chordsong.js?v=7f61fcf3ee",
     "./js/fingering.js": "./js/fingering.js?v=b79f549da6",
     "./js/guitar.js": "./js/guitar.js?v=b2035c0bb4",
     "./js/hand-assets.js": "./js/hand-assets.js?v=734fe538b3",
     "./js/hand.js": "./js/hand.js?v=12a1c35fad",
     "./js/harmony.js": "./js/harmony.js?v=c706b78929",
-    "./js/learn.js": "./js/learn.js?v=2d95b0b374",
-    "./js/main.js": "./js/main.js?v=6258f66266",
+    "./js/learn.js": "./js/learn.js?v=067293e7d2",
+    "./js/main.js": "./js/main.js?v=13a6b59c17",
     "./js/markers.js": "./js/markers.js?v=3e79f88c05",
-    "./js/performer.js": "./js/performer.js?v=389d2fd5c0",
+    "./js/performer.js": "./js/performer.js?v=6dcaff216f",
     "./js/song-audio.js": "./js/song-audio.js?v=508927f5b5",
-    "./js/songchords.js": "./js/songchords.js?v=1e127215f7",
-    "./js/songmaker.js": "./js/songmaker.js?v=853b4fb3f6",
+    "./js/songchords.js": "./js/songchords.js?v=7e3114635e",
+    "./js/songmaker.js": "./js/songmaker.js?v=356852b33a",
     "./js/strumdetect.js": "./js/strumdetect.js?v=1f8d2fa78a",
-    "./js/strumhand.js": "./js/strumhand.js?v=ddc20ea49f",
+    "./js/strumhand.js": "./js/strumhand.js?v=61582e91d4",
     "./js/subdivide.js": "./js/subdivide.js?v=94d1f9485e",
-    "./js/synth.js": "./js/synth.js?v=4047f3e203",
-    "./js/tabstrip.js": "./js/tabstrip.js?v=93e7f68297",
+    "./js/synth.js": "./js/synth.js?v=550a7a3721",
+    "./js/tabstrip.js": "./js/tabstrip.js?v=2b2709df34",
     "./js/theory.js": "./js/theory.js?v=c9eb754cfc",
-    "./js/timeline.js": "./js/timeline.js?v=21e5357f41",
+    "./js/timeline.js": "./js/timeline.js?v=e49a97e17b",
     "./chords/chordnamer.js": "./chords/chordnamer.js?v=7a98aa55ed"
   }
 }
 </script>
-<link rel="modulepreload" href="js/songmaker.js?v=853b4fb3f6">
+<link rel="modulepreload" href="js/songmaker.js?v=356852b33a">
 <link rel="modulepreload" href="js/chord-agreement.js?v=084f95c378">
 <link rel="modulepreload" href="chords/chordnamer.js?v=7a98aa55ed">
 <link rel="modulepreload" href="js/song-audio.js?v=508927f5b5">
@@ -133,6 +133,7 @@
       <label for="offset">Audio starts at video time (s)<input id="offset" type="number" step="0.01" value="0"></label>
     </div>
     <p class="status" id="audMsg">No audio yet.</p>
+    <p class="status ok" id="trimMsg" hidden><span id="trimTxt"></span> <button class="secondary" id="trimUndo" type="button">Undo</button></p>
     <label class="check"><input id="autoOpen" type="checkbox" checked>Open the 3D lesson when done</label>
     <button id="go" type="button" disabled>Write the tab</button>
     <div class="bar" id="bar" hidden><i></i></div>
@@ -160,7 +161,7 @@
 <script src="js/yt.js?v=080657586f"></script>
 <script src="js/user-songs.js?v=48d8d05ec1"></script>
 <script type="module">
-import { decodeAudio, transcribe, toScore, loadChordShapes, reconcileChords } from './js/songmaker.js';
+import { decodeAudio, transcribe, toScore, loadChordShapes, reconcileChords, findTrim, trimmedWav } from './js/songmaker.js';
 import { saveSongAudio, deleteSongAudio, shiftScore } from './js/song-audio.js';
 import { detectAudioChords } from './js/audio-chords.js';
 import { strumForScore, loadStrumPatterns } from './js/strumdetect.js';
@@ -190,10 +191,46 @@ $('loadVid').onclick = async () => {
 };
 
 function setAudio(blob, label, offset) {
-  audioBlob = blob; audioLabel = label;
+  audioBlob = blob; audioLabel = label; trim = null; lastBlob = null;
   if (offset != null) $('offset').value = offset.toFixed(2);
   msg('audMsg', 'Audio ready: ' + label, 'ok'); $('go').disabled = false;
+  showTrim();
+  trimJob = detectTrim(blob);
 }
+
+// Leading loading noise / silence (and a silent end) are cut before transcription; the cut seconds are added to "Audio
+// starts at video time", so note times still match the video. The stored recording is the kept part. Undo keeps it all.
+let trim = null, trimJob = null, lastBlob = null;
+const decoded = new WeakMap();
+async function decodeOnce(blob) { if (!decoded.has(blob)) decoded.set(blob, decodeAudio(blob)); return decoded.get(blob); }
+async function detectTrim(blob) {
+  try {
+    const y = await decodeOnce(blob);
+    if (blob !== audioBlob) return;
+    const t = findTrim(y, 22050);
+    if (!t.trimmed) return;
+    trim = t;
+    $('offset').value = ((parseFloat($('offset').value) || 0) + t.start).toFixed(2);
+    showTrim();
+  } catch (e) { console.warn('trim detection failed:', e); }
+}
+function showTrim() {
+  $('trimMsg').hidden = !trim;
+  if (!trim) return;
+  const parts = [trim.start > 0 && `${trim.start.toFixed(1)} s of silence at the start`, trim.end < trim.dur && `${(trim.dur - trim.end).toFixed(1)} s at the end`].filter(Boolean);
+  $('trimTxt').textContent = 'Trimmed ' + parts.join(' and ') + '.';
+}
+$('trimUndo').onclick = async () => {
+  if (!trim || busy) return;
+  $('offset').value = Math.max(0, (parseFloat($('offset').value) || 0) - trim.start).toFixed(2);
+  trim = null; showTrim();
+  msg('audMsg', 'Keeping the full recording.', 'ok');
+  // the tab was already written from the trimmed audio: write it again from the whole recording
+  if (last && lastBlob === audioBlob) {
+    UserSongs.remove(last.id); await deleteSongAudio(last.id);
+    await writeTab();
+  }
+};
 $('file').onchange = e => { const f = e.target.files[0]; if (f) setAudio(f, f.name, 0); };
 
 // Records a stream's audio until stop(); onStart runs when the recorder actually starts.
@@ -276,10 +313,14 @@ function setBusy(value) {
 async function writeTab() {
   if (!audioBlob || busy || rec) return;
   setBusy(true); $('result').hidden = true;
-  const blob = audioBlob, offset = parseFloat($('offset').value) || 0;
+  const blob = audioBlob;
   try {
     msg('audMsg', 'Decoding the audio…'); bar(0);
-    const y = await decodeAudio(blob);
+    await trimJob;
+    const offset = parseFloat($('offset').value) || 0, cut = trim;   // offset already includes the trimmed start
+    const full = await decodeOnce(blob);
+    const y = cut ? full.subarray(Math.floor(cut.start * 22050), Math.ceil(cut.end * 22050)) : full;
+    const kept = cut ? await trimmedWav(blob, cut.start, cut.end).catch(e => { console.warn(e); return null; }) : blob;
     const { notes, engine } = await transcribe(y, { engine: $('model').value, progress: (f, t) => { bar(f); msg('audMsg', t); } });
     const shapes = await loadChordShapes();
     const localScore = toScore(notes, 0, 0.75, shapes);
@@ -295,7 +336,9 @@ async function writeTab() {
       audioOffset: offset, audioDuration: y.length / 22050,
       duration: +(score.notes[score.notes.length - 1].t + 2).toFixed(2), engine, created: new Date().toISOString(), score };
     const saved = UserSongs.save(last);
-    const audioSaved = saved && await saveSongAudio(id, blob);
+    // a trimmed take that could not be re-encoded is not stored (its clock would not match): playback uses video or synth
+    const audioSaved = saved && !!kept && await saveSongAudio(id, kept);
+    lastBlob = blob;
     $('bar').hidden = true;
     msg('audMsg', `Done with ${engine}.`, 'ok');
     $('resMsg').textContent = `“${title}”: ${score.notes.length} notes, ♩ ≈ ${Math.round(score.bpm)}` + (saved ? ' · saved in this browser' : ' · could not save here (storage blocked): download the JSON');

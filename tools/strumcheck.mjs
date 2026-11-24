@@ -28,10 +28,13 @@ const stats = (a, d = 2) => a.length ? { n: a.length, mean: +(a.reduce((x, y) =>
 function run(symbols, patternId, bpm, hand, { bars = 2, verbose = true } = {}) {
   const prog = symbols.map(s => ({ symbol: s, shape: CS.shapesOf(lib, s)[0], bars }));
   const song = CS.buildChordSong(prog, byId[patternId], bpm, { patterns: pats, strumHand: hand });
-  const { events, strokes } = song;
+  return measure(`${symbols.join('-')} / ${patternId} / ${bpm} bpm / ${hand} hand`, song.events, song.strokes, song.total + 0.5, hand, verbose);
+}
+
+function measure(label, events, strokes, end, hand, verbose = true) {
   const perf = new PF.Performer(left, right);
   perf.setEvents(events);
-  const dt = 1 / 60, end = song.total + 0.5;
+  const dt = 1 / 60;
   const fretErr = [], worst = [], frames = [];
   let ei = 0, first = true;
   for (let T = 0; T < end; T += dt) {
@@ -73,8 +76,8 @@ function run(symbols, patternId, bpm, hand, { bars = 2, verbose = true } = {}) {
   worst.sort((a, b) => b.d - a.d);
   const r = { fret: stats(fretErr), cross: stats(crossErr, 1), within15: crossErr.filter(v => v <= 15).length, missed: missed.length, strings: crossErr.length };
   if (verbose) {
-    console.log(`\n== ${symbols.join('-')} / ${patternId} / ${bpm} bpm / ${hand} hand ==`);
-    console.log('fretting fingertip error at chord onset (mm):', JSON.stringify(r.fret), ' worst:', worst.slice(0, 3).map(w => `${w.sym} s${w.s}f${w.f} ${w.k} ${w.d.toFixed(1)}`).join(' | '));
+    console.log(`\n== ${label} ==`);
+    console.log('fretting fingertip error at onset (mm):', JSON.stringify(r.fret), ' worst:', worst.slice(0, 3).map(w => `${w.sym || "note"} s${w.s}f${w.f} ${w.k} ${w.d.toFixed(1)}`).join(' | '));
     console.log(`strum contact time error (ms): ${JSON.stringify(r.cross)}  within +-15 ms: ${r.within15}/${r.strings}  missed contacts: ${r.missed}`);
   }
   return r;
@@ -82,6 +85,18 @@ function run(symbols, patternId, bpm, hand, { bars = 2, verbose = true } = {}) {
 
 run(['G', 'D', 'Em', 'C'], 'basic', 90, 'pick');
 run(['G', 'D', 'Em', 'C'], 'basic', 90, 'fingers');
+// a mixed song (tools/fixtures/mixed-song.json): 2 strummed bars (G D, detected strokes), 2 bars of single notes, 2 bars of
+// tab chords (exact voicing) on ONE timeline (js/songchords.js buildMixedTimeline): strum crossings in the strummed bars,
+// fingertips on every chord and note onset
+{
+  const F = await imp('js/fingering.js'), SC = await imp('js/songchords.js');
+  const fx = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/fixtures/mixed-song.json')));
+  for (const hand of ['pick', 'fingers']) {
+    const tab = TL.prepareTimeline(F.solveFingering(F.normalizeScore(fx.score)), hand);
+    const mix = SC.buildMixedTimeline({ score: fx.score, events: tab, mode: hand, track: { chords: fx.score.chords, strum: fx.score.strum }, lib, pats });
+    measure(`mixed song (strum G D | notes | tab chords G D) / ${hand} hand`, mix.events, mix.strokes, mix.end + 0.5, hand);
+  }
+}
 if (process.argv.includes('--all')) {
   for (const syms of [['C', 'G', 'Am', 'F'], ['Am', 'F', 'C', 'G'], ['E', 'A', 'B7'], ['A7', 'D7', 'E7']]) run(syms, 'pop', 90, 'pick', { bars: 1 });
   run(['G', 'D', 'Em', 'C'], 'funk16', 100, 'pick');

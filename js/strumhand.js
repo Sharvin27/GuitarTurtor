@@ -86,3 +86,36 @@ export function buildStrumPath(strokes) {
 
   return { segs, at, glow };
 }
+
+/**
+ * Strum path of a song that mixes strummed bars with single notes (js/songchords.js buildMixedTimeline).
+ * parts: [{strokes, w0, w1}]: one path per strummed segment, active only inside its window [w0, w1] (a short approach
+ * before the first stroke and a follow-through after the last). Outside every window at() returns null and the
+ * performer picks the tab notes. blend < 1 during the approach: the performer eases the hand in from where it was.
+ */
+export function buildMixedStrumPath(parts) {
+  const P = parts.filter(p => p.strokes && p.strokes.length).map(p => {
+    const path = buildStrumPath(p.strokes), first = path.segs[0].t0, last = path.segs[path.segs.length - 1].t1;
+    const w0 = Math.min(first, Number.isFinite(p.w0) ? p.w0 : first - 0.3), w1 = Math.max(last, Number.isFinite(p.w1) ? p.w1 : last + 0.1);
+    return { path, first, w0, w1 };
+  });
+  const segs = P.flatMap(p => p.path.segs);
+  function at(T) {
+    for (const p of P) {
+      if (T < p.w0 || T > p.w1) continue;
+      const r = p.path.at(T);
+      r.blend = T < p.first ? Math.max(0, Math.min(1, (T - p.w0) / Math.max(1e-3, p.first - p.w0))) : 1;
+      return r;
+    }
+    return null;
+  }
+  function glow(T) {
+    const out = [0, 0, 0, 0, 0, 0];
+    for (const p of P) {
+      if (T < p.w0 - 0.1 || T > p.w1 + 2) continue;
+      p.path.glow(T).forEach((v, s) => { if (v > out[s]) out[s] = v; });
+    }
+    return out;
+  }
+  return { segs, at, glow, windows: P.map(p => [p.w0, p.w1]), mixed: true };
+}

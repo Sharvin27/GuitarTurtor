@@ -46,7 +46,9 @@ Existing site songs keep their score files unchanged; `python tools/add_chords_t
 Name, diagram, fretting hand, strummed strings and synth notes then all come from that one shape;
 `node tools/chordcheck.mjs` verifies this for library progressions and for songs detected from audio.
 
-In the app, `js/songchords.js buildSongChords` does this for the song's Chords view (main.js Notes / Chords switch): it
+In the app every song is ONE timeline (`js/songchords.js buildMixedTimeline`, no Notes / Chords switch): bars where the tab
+stacks >= 3 notes are strummed from the tab (exact voicing), bars with >= 2 detected `strum.strokes` (or a chord entry flagged
+`"strum": true`) are strummed with the chord song below, all other bars play the tab's single notes. `buildSongChords` builds that chord song: it
 time-warps the nominal pattern clock onto the recording (knots from `strum.strokes`, else `score.grid`), uses the detected
 stroke times and directions when present, and without a strum picks a pattern by tempo / meter / style
 (`chordsong.suggestPattern`). Up strokes hit G B e only; a stroke inside the tempo-dependent fretting lead
