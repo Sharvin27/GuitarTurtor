@@ -42,6 +42,54 @@ Reading: learned chooser beats Viterbi on Locked Away (string acc .40 -> .65-.92
 - Cannot (with 2 songs): param tuning (train-only gains), a learned chooser that satisfies both songs, pitch accuracy on Locked Away (needs a better pitch model / stem separation, i.e. real fine-tuning with more audio+tab pairs: GAPS, SynthTab, GuitarSet audio, more of the user's lesson tabs). The GuitarSet mono-mic audio (656 MB) was downloaded to `data/guitarset/` but not used for pitch fine-tuning locally (CPU/4 GB GPU, torch broken in the venv); see notebook.
 - Numbers are small-sample (Choo Lo held-out = 67 notes); differences of a few points are noise.
 
+## 4. Colab models in the full pipeline (2026-11-24; `eval_models.py`, `eval_loso.py`, `loso_chooser.py`, `guitab_raw.py`)
+Same splits/scorer as above (pipe.score = eval_tabs.py metrics + conf/flag exclusion). Grouping/params = `best_params.json` defaults.
+Engines: basic-pitch (pipe.py cache), guitab E25 onset 0.3 (as the browser), `pitch_crnn.onnx` (notebook CQT: 22.05 kHz, hop 512,
+C2, 120 bins, 24/oct, log1p(10|C|); onset peaks > 0.5, note end where frame < 0.5 - the notebook's threshold, fixed because the
+train split was in its training set). Chooser = `string_chooser.onnx` beam decode; hybrid = Viterbi cost + w * -log p(string),
+w picked on the train split (first 60%, mean exact of both songs) from {.1,.25,.5,1,2,4} -> w = 0.25.
+LOSO: no training for (a)/(b) = whole-song score; choosers retrained locally without the held song (`loso_chooser.py`, notebook
+Part A recipe on CPU, selected on GuitarSet 04 + held-out lessons, never the test song), hybrid w picked on the other song.
+pitch_crnn has no LOSO (Colab fine-tuned it on the first 60% of both songs).
+Cells: held-out (last 40%) recall / pitch / **string+fret exact**; LOSO = string+fret exact on the whole held song.
+
+| | Choo Lo held-out | Locked Away held-out | **held mean exact** | LOSO Choo / Locked (mean) |
+|---|---|---|---|---|
+| (a) basic-pitch + Viterbi (default) | .940 / .478 / .388 | .778 / .534 / .280 | **.334** | .598 / .250 (.424) |
+| (b) guitab + Viterbi | .925 / .522 / .433 | .785 / .470 / .219 | .326 | .632 / .204 (.418) |
+| (c) pitch_crnn + Viterbi | .851 / .478 / .388 | .541 / .466 / .208 | .298 | n/a (trained on both songs) |
+| (d) basic-pitch + string_chooser | .940 / .478 / .090 | .778 / .534 / .147 | .119 | .178 / .167 (.172) |
+| (e) basic-pitch + hybrid (w .25) | .940 / .478 / .299 | .778 / .534 / .272 | .286 | .420 / .336 (.378) |
+
+"best pitch" for (d)/(e) = basic-pitch (best Viterbi held-out mean). Other combinations (held exact Choo / Locked):
+guitab+chooser .119 / .269, guitab+hybrid .328 / .315 (mean .322), crnn+chooser .104 / .197, crnn+hybrid .358 / .330 (mean .344,
+not a protocol cell: w chosen for basic-pitch, no LOSO possible, Choo recall .85, +1 pt = noise). Hybrid sweep held mean
+(basic-pitch): w .1 .318, .25 .285, .5 .308, 1 .273, 2 .260, 4 .233 - never above Viterbi .334.
+pitch_crnn onset threshold (held, info only): 0.3 gives .433 / .244 exact (recall Locked .63); the default 0.5 loses recall on
+Locked Away (.54 vs basic-pitch .78). Train split is memorised (pitch 1.00 / .92), so it cannot be tuned there.
+
+**Why the chooser fails end to end:** the notebook's string accuracies are teacher-forced (true previous strings as input).
+Free-running (its own previous choices, reference pitches) it collapses:
+
+| string acc on reference pitches | teacher-forced | free-running | Viterbi |
+|---|---|---|---|
+| Choo Lo held-out (Colab model) | .716 | .149 | .866 |
+| Locked Away held-out (Colab model) | .935 | .556 | .401 |
+| Choo Lo LOSO (local) | .201 | .241 | .868 |
+| Locked Away LOSO (local) | .891 | .510 | .392 |
+
+It mostly learned "same string as the last note", so one wrong choice propagates; with audio pitches (extra/missing notes) the
+history is worse still. It does carry real signal on Locked Away (free-run .51-.56 vs Viterbi .39; hybrid LOSO .336 vs .250),
+but costs Choo Lo far more (.598 -> .420).
+
+**Verdict: nothing beats the default on held-out; basic-pitch + Viterbi stays** (local helper) and nothing was integrated into
+`js/songmaker.js` / `make_song.py`. Browser check (create.html upload of audio/choo-lo.mp3, headless Chrome, `--until 38.7`):
+guitab E25 (the page's default option) 93.1 / 73.0 / 63.2 % (recall / pitch / exact), basic-pitch 90.8 / 70.7 / 60.3 %.
+Next for the chooser: train with scheduled sampling / noisy history (or drop history and keep only pitch + hand anchor), and
+score free-running in the notebook; for pitch_crnn: more audio+tab pairs, lower onset threshold, LOSO run on Colab.
+Basic-pitch timing: pipe.py uses basic_pitch's own `model_output_to_notes` (model_frames_to_time), not frame/FPS, so the
+~0.4 s/100 s drift seen elsewhere does not affect these numbers.
+
 ## Files
-`pipe.py` (pipeline+scorer), `tune.py`, `chooser.py`, `exp_chooser.py`, `baseline.py`, results JSON (`tune_results.json`, `chooser_results.json`), `best_params.json`, `tuned_params_split60.json`, `string_chooser_gbm.pkl`, `package_data.py` (-> `out/GuitarTurtor_train.zip`, audio only with `--with-audio`), `colab_finetune.ipynb` (built by `mk_nb.py`), `.gitignore` (audio/data/work).
+`pipe.py` (pipeline+scorer), `tune.py`, `chooser.py`, `exp_chooser.py`, `baseline.py`, results JSON (`tune_results.json`, `chooser_results.json`), `best_params.json`, `tuned_params_split60.json`, `string_chooser_gbm.pkl`, `package_data.py` (-> `out/GuitarTurtor_train.zip`, audio only with `--with-audio`), `colab_finetune.ipynb` (built by `mk_nb.py`), `eval_models.py` / `eval_loso.py` / `loso_chooser.py` / `guitab_raw.py` (section 4; run with `.venv-ort` = anaconda + onnxruntime 1.20.1 + basic-pitch 0.4.0 --no-deps; results `eval_models.json`, `eval_loso.json`), `.gitignore` (audio/data/work).
 Data: GuitarSet (Xi et al., ISMIR 2018), Zenodo 3371780, CC BY 4.0 - attribution required. Our audio and GuitarSet stay local, never commit.

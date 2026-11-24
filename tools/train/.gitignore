@@ -7,3 +7,4 @@ data/
 out/
 *.log
 __pycache__/
+.venv-ort/
