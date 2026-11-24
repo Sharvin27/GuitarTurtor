@@ -23,6 +23,7 @@ import { detectAudioChords as baselineChords } from './fixtures/audio-chords-bas
 import { decodePCM16Wav } from './fixtures/wav.mjs';
 import { playbackHarness } from './fixtures/playback-harness.mjs';
 import { fakeIndexedDB } from './fixtures/indexeddb.mjs';
+import { CaptureMachine, fitRect, videoAspect, clockText } from '../js/capture.js';
 
 const prepare = (score, mode = 'pick') => prepareTimeline(solveFingering(normalizeScore(score)), mode);
 const melody = () => ({ bpm: 120, notes: Array.from({ length: 8 }, (_, i) => ({ t: 2 + i / 4, n: [[0, [8, 12, 15, 12][i % 4]]] })) });
@@ -590,4 +591,51 @@ test('hand video picks the string/fret nearest the fingertips; pitch is kept; no
   const src = [[0, 0], [1, 0], [1, 1], [0, 1], [.5, .5], [.2, .7]], dst = src.map(([a, b]) => applyH(H, a, b));
   dst.push([999, 999]); src.push([.3, .3]);
   assert.equal(findH(src, dst, 1).inl.filter(Boolean).length, 6);
+});
+
+test('capture state machine: one stop wins, ended only after playing, end time, fit rect', () => {
+  const m = new CaptureMachine({ start: 5, end: 20 });
+  assert.equal(m.player(0), false); assert.equal(m.tick(30), false);          // idle: nothing stops
+  assert.ok(m.arm()); assert.ok(m.begin(1000));
+  assert.equal(m.player(0), false, 'stale ended before playing');
+  assert.equal(m.tick(19.9), false); assert.equal(m.elapsed(3500), 2.5);
+  assert.equal(m.tick(20), true); assert.equal(m.reason, 'end');
+  assert.equal(m.stop('esc'), false); assert.equal(m.reason, 'end');
+  const e = new CaptureMachine({ end: NaN }); e.arm(); e.begin(0);
+  assert.equal(e.end, null); assert.equal(e.tick(1e6), false);
+  assert.equal(e.player(1), false); assert.equal(e.player(0), true); assert.equal(e.reason, 'ended');
+  assert.equal(new CaptureMachine({ start: 10, end: 4 }).end, null);
+  const a = new CaptureMachine(); a.arm(); assert.ok(a.stop('shared')); assert.equal(a.begin(0), false);
+  assert.deepEqual(fitRect(1600, 900, 16 / 9), { left: 0, top: 0, width: 1600, height: 900 });
+  const p = fitRect(1600, 900, 9 / 16); assert.equal(p.height, 900); assert.equal(p.left, (1600 - 506.25) / 2);
+  const t = fitRect(1000, 900, 16 / 9); assert.equal(t.width, 1000); assert.equal(t.top, (900 - 562.5) / 2);
+  assert.equal(videoAspect('https://youtube.com/shorts/abcdefghijk'), 9 / 16); assert.equal(videoAspect('https://youtu.be/abcdefghijk'), 16 / 9);
+  assert.equal(clockText(75.9), '1:15');
+});
+
+test('tab capture fills the window, stops itself (ended / Esc / stop time) and goes straight on to the tab', async () => {
+  for (const how of ['ended', 'esc', 'end', 'shared']) {
+    const h = createHarness({ videoTime: 12 });
+    h.get('url').value = 'https://www.youtube.com/shorts/abcdefghijk'; await h.get('loadVid').onclick();
+    h.get('capFrom').value = '3'; h.get('capTo').value = how === 'end' ? '10' : '';
+    await h.get('cap').onclick();
+    const html = h.document.documentElement, box = h.yt.panel.querySelector('.ytbody');
+    assert.ok(html.classList.contains('yt-theatre'), how); assert.ok(h.yt.panel.classList.contains('theatre'));
+    assert.equal(box.style.height, '900px'); assert.equal(box.style.width, '506.25px');   // 9:16 pillarbox in 1600x900
+    assert.equal(h.document.body.children.at(-1).className, 'capbar');
+    assert.deepEqual(h.yt.plays, [[3, 1]]);
+    if (how === 'ended') { h.yt.onState(1); h.yt.onState(0); }
+    else if (how === 'esc') h.key('Escape');
+    else if (how === 'end') await new Promise(r => setTimeout(r, 450));             // 12 s >= stop at 10 s
+    else h.tracks[1].onended();
+    assert.equal(h.recorder.state, 'inactive', how);
+    await h.recorder.done;
+    assert.ok(!html.classList.contains('yt-theatre')); assert.ok(!h.yt.panel.classList.contains('theatre'));
+    assert.equal(box.style.height, ''); assert.ok(h.document.body.children.at(-1).removed);
+    assert.equal(h.calls, 1, how);
+    const song = [...h.songs.values()][0];
+    assert.equal(song.audioOffset, 3);                                             // audio t = 0 is video t = 3
+    assert.equal(h.navigation[0], 'index.html#' + song.id);
+    h.key('Escape'); h.yt.onState(0); assert.equal(h.calls, 1);                    // late events after the take are harmless
+  }
 });

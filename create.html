@@ -31,6 +31,7 @@
   .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
   .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
   .row2 { display: grid; grid-template-columns: 1fr 140px; gap: 10px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   @media (max-width: 520px) { .row3, .row2 { grid-template-columns: 1fr; } }
   button, .btn { font: 700 16px var(--display); letter-spacing: .02em; color: #fff; background: var(--blue); border: 0; border-radius: 10px;
     padding: 11px 14px; cursor: pointer; text-align: center; text-decoration: none; }
@@ -56,13 +57,12 @@
   input[type=file] { padding: 8px; }
   .vision { display: grid; gap: 10px; }
   .vision canvas { width: 100%; max-width: 360px; border-radius: 10px; background: #000; cursor: crosshair; justify-self: start; }
-  .ytpanel.vision-cap { width: min(360px, 46vw); }
-  .ytpanel.vision-cap .ytbody { max-height: 80vh; }
 </style>
 <script type="importmap">
 {
   "imports": {
     "./js/audio-chords.js": "./js/audio-chords.js?v=5e6a940615",
+    "./js/capture.js": "./js/capture.js?v=1f224da8b0",
     "./js/chord-agreement.js": "./js/chord-agreement.js?v=084f95c378",
     "./js/chordpanel.js": "./js/chordpanel.js?v=3c997c3bd6",
     "./js/chords-mode.js": "./js/chords-mode.js?v=be68a5ff86",
@@ -98,6 +98,7 @@
 <link rel="modulepreload" href="js/song-audio.js?v=508927f5b5">
 <link rel="modulepreload" href="js/audio-chords.js?v=5e6a940615">
 <link rel="modulepreload" href="js/strumdetect.js?v=1f8d2fa78a">
+<link rel="modulepreload" href="js/capture.js?v=1f224da8b0">
 <link rel="modulepreload" href="js/handvision.js?v=933483dd39">
 </head>
 <body>
@@ -129,7 +130,12 @@
       <button class="secondary" id="mic" type="button">Record mic</button>
       <button class="secondary" id="cap" type="button">Capture the video</button>
     </div>
-    <p class="note">Capture: Chrome asks what to share. Choose <b>this tab</b> and turn on <b>Share tab audio</b>; the video starts playing and is recorded until you press Stop. Don’t pause or seek while it records.</p>
+    <p class="note">Capture: Chrome asks what to share. Choose <b>this tab</b> and turn on <b>Share tab audio</b>. The video then fills the window, plays at 1× and stops by itself at the end (or press <b>Esc</b>); the tab is written straight after.</p>
+    <div class="pair">
+      <label for="capFrom">Capture from (s)<input id="capFrom" type="number" min="0" step="0.1" value="0"></label>
+      <label for="capTo">Stop at (s)<input id="capTo" type="number" min="0" step="0.1" placeholder="end of video"></label>
+    </div>
+    <p class="note">Running the local helper (<code>python songforge/server.py</code>)? Paste the link there to skip recording.</p>
     <div class="row2">
       <label for="model">Model
         <select id="model">
@@ -146,7 +152,7 @@
       </select>
     </label>
     <div class="vision" id="visBox" hidden>
-      <p class="note">The pitch decides each note; the fretting fingertips pick which string and fret play it. Capture the video (the player is enlarged while capturing) or use a video file of the player. The neck should be in view with the nut or a few inlay dots.</p>
+      <p class="note">The pitch decides each note; the fretting fingertips pick which string and fret play it. Capture the video (the player fills the window while capturing) or use a video file of the player. The neck should be in view with the nut or a few inlay dots.</p>
       <label for="vidFile" class="btn secondary">Use a video file<input id="vidFile" type="file" accept="video/*" hidden></label>
       <canvas id="visPreview" width="240" height="135" hidden></canvas>
       <p class="status" id="visMsg"></p>
@@ -190,6 +196,7 @@ import { decodeAudio, transcribe, toScore, loadChordShapes, reconcileChords, fin
 import { saveSongAudio, deleteSongAudio, shiftScore } from './js/song-audio.js';
 import { detectAudioChords } from './js/audio-chords.js';
 import { strumForScore, loadStrumPatterns } from './js/strumdetect.js';
+import { CaptureMachine, Theatre, videoAspect } from './js/capture.js';
 const $ = id => document.getElementById(id);
 let yt = null, videoId = '', audioBlob = null, audioLabel = '', last = null, rec = null, busy = false, lastRaw = null;
 
@@ -210,6 +217,7 @@ $('loadVid').onclick = async () => {
   msg('vidMsg', 'Loading the video…');
   try {
     yt = yt || new YTSync({ onError: c => msg('vidMsg', 'YouTube error ' + c + ' (the owner may block embedding).', 'err') });
+    yt.onState = s => { if (capture && capture.machine.player(s)) stopRec(); };   // video ended -> stop capturing
     await yt.load(id, $('name').value.trim() || 'Video');
     videoId = id; msg('vidMsg', 'Video loaded (bottom right). It plays with the finished tab.', 'ok');
   } catch (e) { msg('vidMsg', e.message, 'err'); }
@@ -217,7 +225,7 @@ $('loadVid').onclick = async () => {
 
 function setAudio(blob, label, offset, track = null) {
   audioBlob = blob; audioLabel = label; trim = null; lastBlob = null; visionTrack = track; visionJob = null;
-  if (offset != null) $('offset').value = offset.toFixed(2);
+  if (offset != null) $('offset').value = (+offset.toFixed(2) || 0).toFixed(2);   // no "-0.00"
   msg('audMsg', 'Audio ready: ' + label, 'ok'); $('go').disabled = false;
   showTrim();
   trimJob = detectTrim(blob);
@@ -310,7 +318,7 @@ function record(stream, btn, label, onStart) {
     stream.getTracks().forEach(t => t.stop()); btn.textContent = old; btn.classList.remove('rec'); rec = null;
     if (yt) yt.pause();
     const vt = capVision ? capVision.stopStream() : null; capVision = null;
-    if (yt && yt.panel) yt.panel.classList.remove('vision-cap');
+    endCapture();
     setBusy(false);
     if (chunks.length) {
       setAudio(new Blob(chunks, { type: mr.mimeType }), label + ' (' + new Date().toLocaleTimeString() + ')', rec_offset, vt && vt.frames.length ? vt : null);
@@ -345,38 +353,68 @@ $('mic').onclick = async () => {
 
 $('cap').onclick = async () => {
   if (busy) return;
-  if (rec) return rec.stop();
+  if (rec) return stopRec('user');
   setBusy(true);
   try {
     if (!yt || !yt.ready) throw new Error('Load the YouTube video first (step 1).');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('This browser can’t capture tab audio. Use Chrome on a computer, or upload a file.');
     yt.pause();
     const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, preferCurrentTab: true, selfBrowserSurface: 'include' });
+    // hands-free: the player fills the window (fullscreen if allowed) right away; the take stops by itself
+    const from = Math.max(0, parseFloat($('capFrom').value) || 0), machine = new CaptureMachine({ start: from, end: parseFloat($('capTo').value) });
+    const theatre = new Theatre(yt.panel, { aspect: videoAspect($('url').value), doc: document, win: window, onExit: why => stopRec(why) });
+    machine.arm(); capture = { machine, theatre, timer: null };
+    theatre.enter();
     // time alignment: audio t = 0 is when the recorder starts; once the video is playing, map back to video time
     let t0 = 0, capT0 = null;
     if (avMode() && s.getVideoTracks && s.getVideoTracks().length) {
-      // keep the video frames too: fingertips are tracked on the (enlarged) player, on the recorder's clock
-      yt.panel.classList.add('vision-cap');
+      // keep the video frames too: fingertips are tracked on the full-window player (ytCrop reads its live rect), on the recorder's clock
       capVision = await getVision(); capVision.reset();
       capVision.startStream(s, { clock: () => capT0 == null ? null : (performance.now() - capT0) / 1000, crop: ytCrop });
     }
     setBusy(false);
     record(s, $('cap'), 'Captured video audio', () => {
-      t0 = capT0 = performance.now(); rec_offset = yt.time();
-      yt.play(yt.time(), 1);
+      t0 = capT0 = performance.now(); rec_offset = from;
+      machine.begin(t0);
+      yt.play(from, 1);
       const poll = setInterval(() => {
         if (!rec) return clearInterval(poll);
         if (yt.state === 1) { rec_offset = yt.time() - (performance.now() - t0) / 1000; clearInterval(poll); }
       }, 50);
+      if (capture && capture.machine === machine) capture.timer = setInterval(() => {
+        theatre.tick(machine.elapsed(performance.now()));
+        if (machine.tick(yt.time())) stopRec();
+      }, 200);
     });
-    msg('audMsg', 'Capturing… the video plays now. Press Stop when the part you want is over.');
-  } catch (e) { setBusy(false); msg('audMsg', 'Capture: ' + e.message, 'err'); }
+    msg('audMsg', 'Capturing… the video plays now and stops by itself at the end (Esc stops early).');
+  } catch (e) {
+    if (capVision) { capVision.stopStream(); capVision = null; }
+    endCapture(); setBusy(false); msg('audMsg', 'Capture: ' + e.message, 'err');
+  }
 };
+
+// ---------- hands-free capture: full-window player, auto-stop, then straight on to trimming + transcription ----------
+let capture = null;   // { machine: CaptureMachine, theatre: Theatre, timer }
+const STOPPED = { ended: 'the video ended', end: 'reached the stop time', esc: 'Esc', user: 'Stop', fullscreen: 'left fullscreen', shared: 'sharing stopped' };
+function stopRec(reason = 'user') {
+  if (capture) capture.machine.stop(reason);   // keeps the first reason; rec.stop() is idempotent
+  if (rec) rec.stop();
+}
+function endCapture() {
+  if (!capture) return;
+  const { machine, theatre, timer } = capture; capture = null;
+  clearInterval(timer); machine.stop('shared');            // no-op unless the stream ended on its own
+  theatre.exit();
+  const step = $('cap').closest ? $('cap').closest('.card') : null;
+  if (step && step.scrollIntoView) step.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  if (machine.reason) msg('audMsg', `Capture stopped (${STOPPED[machine.reason] || machine.reason}). Trimming and writing the tab…`);
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && capture) { e.preventDefault(); stopRec('esc'); } });
 
 const bar = f => { $('bar').hidden = false; $('bar').firstChild.style.width = Math.round(100 * Math.max(0, Math.min(1, f))) + '%'; };
 function setBusy(value) {
   busy = value;
-  for (const id of ['file', 'mic', 'cap', 'model', 'offset', 'loadVid', 'url', 'tabFrom', 'vidFile']) $(id).disabled = value;
+  for (const id of ['file', 'mic', 'cap', 'model', 'offset', 'loadVid', 'url', 'tabFrom', 'vidFile', 'capFrom', 'capTo']) $(id).disabled = value;
   $('go').disabled = value || !audioBlob;
 }
 async function writeTab() {
