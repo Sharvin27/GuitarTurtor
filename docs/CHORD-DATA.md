@@ -46,6 +46,12 @@ Existing site songs keep their score files unchanged; `python tools/add_chords_t
 Name, diagram, fretting hand, strummed strings and synth notes then all come from that one shape;
 `node tools/chordcheck.mjs` verifies this for library progressions and for songs detected from audio.
 
+In the app, `js/songchords.js buildSongChords` does this for the song's Chords view (main.js Notes / Chords switch): it
+time-warps the nominal pattern clock onto the recording (knots from `strum.strokes`, else `score.grid`), uses the detected
+stroke times and directions when present, and without a strum picks a pattern by tempo / meter / style
+(`chordsong.suggestPattern`). Up strokes hit G B e only; a stroke inside the tempo-dependent fretting lead
+(`chordsong.fretLead(bpm)`) before a shape change sounds the open strings.
+
 ## Tools
 
 | command | what |

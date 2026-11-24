@@ -3,11 +3,17 @@
 // shows the teaching UI: big chord name, chord diagrams (now / next), the strum pattern as an arrow strip with a
 // moving playhead and the count (1 & 2 & ...). main.js only creates it, calls update() every frame and loads
 // the song it builds; the hands, strings and audio are driven by the page's normal clock.
-import { buildChordSong, canonicalSymbol, shapesOf, LEAD_IN } from './chordsong.js';
+// Chord syntax: "G D Em C" (Bars / chord each), "G:2 D:2 Am:4" (beats per chord, halves allowed: "C:1.5"),
+// "Am:4@ballad16" (that chord uses its own strum pattern; the pattern restarts on every chord change).
+// Song view (showSong): the same panel and strip show a song played as chords + strumming (main.js builds it with
+// js/songchords.js): the detected (or suggested) pattern and tempo are preselected, the practice controls hidden.
+import { buildChordSong, canonicalSymbol, shapesOf, suggestPattern, LEAD_IN } from './chordsong.js';
+import { patternTokens } from '../chords/strum_model.js';
 import { renderStrokes } from './synth.js';
 
 const FINGER_CSS = ['#4cc9f0', '#80ed99', '#ffd166', '#ef476f'];
 const PRESETS = [
+  { id: 'knockin', name: "G – D – Am  (Knockin' on Heaven's Door lesson)", chords: 'G:2 D:2 Am:4 G:2 D:2 C:4', bars: 1, pattern: 'ballad16', bpm: 56 },
   { id: 'g-d-em-c', name: 'G – D – Em – C  (pop/folk)', chords: 'G D Em C', bars: 2 },
   { id: 'c-g-am-f', name: 'C – G – Am – F  (I V vi IV)', chords: 'C G Am F', bars: 2 },
   { id: 'am-f-c-g', name: 'Am – F – C – G  (vi IV I V)', chords: 'Am F C G', bars: 2 },
@@ -47,10 +53,17 @@ const CSS = `
 .cp-shapes select { width: auto; max-width: 150px; padding: 4px 6px; min-height: 28px; font-weight: 500; }
 .cp-msg { color: #ef476f; min-height: 1.2em; font-size: 12px; }
 .cp-hint { color: #8a93a3; font-size: 11.5px; }
+.cp-sugg { color: #aab2c0; font-size: 11.5px; }
+.cp-sugg button { min-height: 24px; padding: 3px 7px; font-size: 11.5px; margin-left: 4px; }
+.cp-song { color: #c9d0dc; font-size: 12px; line-height: 1.45; }
+.cp-song b { color: #ffd9a0; }
+.cp-song code { font: 600 12px/1.3 ui-monospace, Consolas, monospace; color: #e9ecf1; background: #222733; border-radius: 4px; padding: 1px 4px; white-space: nowrap; }
+.cp.song .cp-prac { display: none !important; }
+.cp:not(.song) .cp-songonly { display: none !important; }
 #cp-strip { position: absolute; left: 0; right: 0; bottom: 0; top: var(--cp-head, 42px); width: 100%; height: calc(100% - var(--cp-head, 42px));
   background: #0d0f14; z-index: 1; display: none; touch-action: pan-y; }
 body.chords #cp-strip { display: block; }
-body.chords .learn-hud, body.chords .learn-sub, body.chords #info { display: none !important; }
+body.chords .learn-hud, body.chords .learn-sub, body.chords #info, body.chords .chordpanel { display: none !important; }
 @media (max-width: 700px) {
   .cp { width: auto; right: 8px; }
   .cp-name { font-size: 40px; }
@@ -98,6 +111,26 @@ export function countLabel(p, i) {
   return f < 0.5 ? 'tr' : 'let';
 }
 
+/**
+ * "G D:2 Am:1.5@ballad16" -> [{sym:'G', beats:null, pattern:null}, {sym:'D', beats:2, ...}, {sym:'Am', beats:1.5, pattern:'ballad16'}]
+ * beats: > 0 in half-beat steps (null = the Bars / chord setting); pattern: a strum_patterns.json id (null = the main pattern).
+ * Bad items carry .error.
+ */
+export function parseChordList(txt) {
+  return String(txt || '').split(/[\s,;]+/).map(x => x.trim()).filter(Boolean).slice(0, 32).map(tok => {
+    const [head, pattern = null] = tok.split('@');
+    const [sym, b] = head.split(':');
+    const out = { tok, sym, beats: null, pattern: pattern || null };
+    if (b !== undefined) {
+      const v = Number(b.replace(',', '.').replace('½', '.5'));
+      if (!(v > 0 && v <= 32 && Math.abs(v * 2 - Math.round(v * 2)) < 1e-9)) out.error = `${tok}: beats must be a multiple of 0.5`;
+      else out.beats = v;
+    }
+    if (!sym) out.error = `${tok}: missing chord`;
+    return out;
+  });
+}
+
 export function initChords(ctx) {
   const st = document.createElement('style');
   st.textContent = CSS; document.head.appendChild(st);
@@ -106,6 +139,7 @@ export function initChords(ctx) {
     bpm: +store.get('g3d.chords.bpm', 90), sound: 'clean', hand: 'pick', click: false, loop: true, palm: false };
   let lib = null, pats = null, patById = {}, active = false, song = null, buildTok = 0, timer = null, loadingData = null;
   let curChord = -2, nextChord = -2;
+  let kind = 'practice', songMeta = null;   // 'practice' = chord practice mode, 'song' = a song shown as chords (showSong)
 
   const panel = document.createElement('div');
   panel.className = 'cp'; panel.hidden = true;
@@ -118,18 +152,21 @@ export function initChords(ctx) {
       <div class="cp-dias"><div class="cp-dia" id="cp-dia-cur"></div><div class="cp-dia next" id="cp-dia-next"></div></div>
     </div>
     <div class="cp-card cp-set" id="cp-set" hidden>
-      <label>Progression <select id="cp-preset"></select></label>
-      <label>Chords <input id="cp-chords" list="cp-symbols" autocomplete="off" spellcheck="false" placeholder="G D Em C" aria-label="Chord symbols separated by spaces"></label>
+      <div class="cp-song cp-songonly" id="cp-song" role="status"></div>
+      <label class="cp-prac">Progression <select id="cp-preset"></select></label>
+      <label class="cp-prac">Chords <input id="cp-chords" list="cp-symbols" autocomplete="off" spellcheck="false" placeholder="G D Em C  or  G:2 D:2 Am:4@ballad16" aria-label="Chord symbols separated by spaces; optional :beats and @pattern per chord"></label>
       <datalist id="cp-symbols"></datalist>
-      <div class="cp-msg" id="cp-msg" role="status"></div>
-      <div class="cp-shapes" id="cp-shapes" aria-label="Chord shapes"></div>
+      <div class="cp-msg cp-prac" id="cp-msg" role="status"></div>
+      <div class="cp-hint cp-prac">Per chord: <code>G:2</code> = 2 beats (halves allowed), <code>Am:4@ballad16</code> = own pattern.</div>
+      <div class="cp-shapes cp-prac" id="cp-shapes" aria-label="Chord shapes"></div>
       <label>Strum pattern <select id="cp-pattern"></select></label>
       <div class="cp-hint" id="cp-pdesc"></div>
+      <div class="cp-sugg cp-prac" id="cp-sugg"></div>
       <label>Tempo <span><input type="range" id="cp-bpm" min="40" max="180" step="1"> <output id="cp-bpm-out"></output> bpm</span></label>
-      <label>Bars / chord <select id="cp-bars"><option>1</option><option>2</option><option>4</option></select></label>
-      <label>Sound <select id="cp-sound"><option value="clean">Clean acoustic</option><option value="pick">Electric (distorted)</option></select></label>
-      <label>Strumming hand <select id="cp-hand"><option value="pick">Pick</option><option value="fingers">Fingers</option></select></label>
-      <div class="cp-row">
+      <label class="cp-prac">Bars / chord <select id="cp-bars"><option>1</option><option>2</option><option>4</option></select></label>
+      <label class="cp-prac">Sound <select id="cp-sound"><option value="clean">Clean acoustic</option><option value="pick">Electric (distorted)</option></select></label>
+      <label class="cp-prac">Strumming hand <select id="cp-hand"><option value="pick">Pick</option><option value="fingers">Fingers</option></select></label>
+      <div class="cp-row cp-prac">
         <label class="chk"><input type="checkbox" id="cp-click"> Metronome</label>
         <label class="chk"><input type="checkbox" id="cp-loop" checked> Loop</label>
         <label class="chk"><input type="checkbox" id="cp-palm"> Palm mute</label>
@@ -156,36 +193,70 @@ export function initChords(ctx) {
       $('cp-pattern').innerHTML = `<optgroup label="Strumming">${p.strum.map(opt).join('')}</optgroup><optgroup label="Fingerpicking">${p.pick.map(opt).join('')}</optgroup>`;
       if (!patById[state.pattern]) state.pattern = 'basic';
       syncControls();
+      return { lib, pats };
     });
     return loadingData;
   }
+  const patDesc = p => `${p.description || ''} (${p.time_sig}${p.bpm ? `, typical ${p.bpm[0]}–${p.bpm[1]} bpm` : ''}${p.songs && p.songs.length ? '; e.g. ' + p.songs[0] : ''})`;
   function syncControls() {
+    if (kind === 'song' && songMeta) { syncSong(); return; }
     $('cp-chords').value = state.chords;
     const pr = PRESETS.find(x => x.chords === state.chords.trim().replace(/\s+/g, ' '));
     $('cp-preset').value = pr ? pr.id : 'custom';
-    $('cp-pattern').value = state.pattern; $('cp-bpm').value = state.bpm; $('cp-bpm-out').textContent = state.bpm;
+    dropCustomOption();
+    $('cp-pattern').value = state.pattern; $('cp-bpm').value = state.bpm; $('cp-bpm-out').textContent = state.bpm; $('cp-bpm').disabled = false;
     $('cp-bars').value = String(state.bars); $('cp-sound').value = state.sound; $('cp-hand').value = state.hand;
     $('cp-click').checked = state.click; $('cp-loop').checked = state.loop; $('cp-palm').checked = state.palm;
     const p = patById[state.pattern];
-    if (p) $('cp-pdesc').textContent = `${p.description || ''} (${p.time_sig}, typical ${p.bpm[0]}–${p.bpm[1]} bpm${p.songs && p.songs.length ? '; e.g. ' + p.songs[0] : ''})`;
+    if (p) $('cp-pdesc').textContent = patDesc(p);
+    // tempo-aware suggestion (slow ballads get a ballad pattern, never all-down eighths), only when the chosen pattern
+    // does not suit the tempo: outside its typical range, or a driving pattern under 90 bpm
+    const fits = p && (!p.bpm || (state.bpm >= p.bpm[0] && state.bpm <= p.bpm[1])) && !(state.bpm < 90 && p.feel === 'driving');
+    const sg = p && pats && !fits ? suggestPattern(pats, { bpm: state.bpm, beatsPerBar: p.beats_per_bar, style: p.type === 'pick' ? 'pick' : 'strum' }) : null;
+    $('cp-sugg').innerHTML = sg && sg.id !== state.pattern ? `Suggested at ${state.bpm} bpm: <b>${sg.name}</b><button type="button" data-id="${sg.id}">Use</button>` : '';
   }
-  const parseChords = txt => txt.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean).slice(0, 16);
+  // song view: the detected pattern may be a "custom" one that is not in the library
+  function dropCustomOption() { const o = $('cp-pattern').querySelector('option[data-song]'); if (o) o.remove(); }
+  function syncSong() {
+    const m = songMeta, p = m.pattern, sel = $('cp-pattern');
+    dropCustomOption();
+    if (!patById[m.patternId]) {
+      const o = document.createElement('option'); o.value = m.patternId; o.dataset.song = '1'; o.textContent = `${p.name || 'Detected pattern'} (${p.grid || ''})`;
+      sel.insertBefore(o, sel.firstChild);
+    }
+    sel.value = m.patternId;
+    const tempo = Math.round(m.tempo);
+    $('cp-bpm').value = tempo; $('cp-bpm-out').textContent = tempo; $('cp-bpm').disabled = true;
+    $('cp-pdesc').textContent = patDesc(p);
+    const grid = p.type === 'pick' ? p.steps.join(' ') : p.grid;
+    const src = m.detected ? `Strumming detected in the recording${m.confidence != null ? ` (confidence ${(+m.confidence).toFixed(2)})` : ''}`
+      : m.synthetic ? `No strum pattern detected in the recording: pattern suggested for ${tempo} bpm${m.meter ? `, ${m.meter}` : ''}` : 'Pattern chosen by you';
+    $('cp-song').innerHTML = `<div><b>${m.label || 'This song'}</b> as chords</div><div>${src}:</div>` +
+      `<div><b>${p.name || m.patternId}</b> <code>${grid}</code> · ${tempo} bpm</div>` +
+      (m.detectedGrid && m.detectedGrid !== grid ? `<div>played: <code>${m.detectedGrid}</code></div>` : '') +
+      `<div class="cp-hint">${m.chordSource || ''}${m.sound ? ' · sound: ' + m.sound : ''}</div>`;
+  }
 
   // ---------- build ----------
   function schedule() { clearTimeout(timer); timer = setTimeout(rebuild, 140); }
   async function rebuild() {
-    if (!active || !lib) return;
+    if (!active || !lib || kind !== 'practice') return;
     const my = ++buildTok;
-    const syms = parseChords(state.chords);
+    const items = parseChordList(state.chords), syms = items.map(x => x.sym);
     const msg = $('cp-msg');
-    const bad = syms.filter(s => !shapesOf(lib, s).length);
-    if (!syms.length || bad.length) { msg.textContent = syms.length ? `Unknown chord: ${bad.join(', ')}` : 'Type some chords, e.g. G D Em C'; return; }
+    const bad = items.filter(x => !x.error && !shapesOf(lib, x.sym).length).map(x => x.sym);
+    const errs = items.filter(x => x.error).map(x => x.error).concat(items.filter(x => x.pattern && !patById[x.pattern]).map(x => `${x.tok}: unknown pattern "${x.pattern}"`));
+    if (!items.length || bad.length || errs.length) { msg.textContent = !items.length ? 'Type some chords, e.g. G D Em C' : bad.length ? `Unknown chord: ${bad.join(', ')}` : errs.join('; '); return; }
     msg.textContent = '';
     const pattern = patById[state.pattern];
-    const prog = syms.map((s, i) => { const sh = shapesOf(lib, s); return { symbol: canonicalSymbol(s), shape: sh[state.shapeIdx[i] < sh.length ? state.shapeIdx[i] | 0 : 0], bars: state.bars }; });
+    const prog = items.map((x, i) => {
+      const sh = shapesOf(lib, x.sym);
+      return { symbol: canonicalSymbol(x.sym), shape: sh[state.shapeIdx[i] < sh.length ? state.shapeIdx[i] | 0 : 0], bars: state.bars,
+        ...(x.beats ? { beats: x.beats } : {}), ...(x.pattern ? { pattern: patById[x.pattern] } : {}) };
+    });
     drawShapePickers(syms);
     const cs = buildChordSong(prog, pattern, state.bpm, { patterns: pats, strumHand: state.hand, palmMute: state.palm });
-    cs.label = `Chords ${syms.join(' ')} · ${pattern.name} · ${state.bpm} bpm`;
+    cs.label = `Chords ${items.map(x => x.tok).join(' ')} · ${pattern.name} · ${state.bpm} bpm`;
     cs.renderAudio = () => renderStrokes(cs.strokes, state.sound, cs.total + 2.2, { click: state.click ? { bpm: state.bpm, beatsPerBar: pattern.beats_per_bar, startT: LEAD_IN } : null });
     song = cs; curChord = nextChord = -2;
     store.set('g3d.chords', state.chords); store.set('g3d.chords.bars', state.bars); store.set('g3d.chords.pattern', state.pattern); store.set('g3d.chords.bpm', state.bpm);
@@ -204,16 +275,27 @@ export function initChords(ctx) {
   // ---------- controls ----------
   $('cp-preset').addEventListener('change', e => {
     const p = PRESETS.find(x => x.id === e.target.value);
-    if (p) { state.chords = p.chords; state.bars = p.bars; state.shapeIdx = {}; syncControls(); schedule(); } else $('cp-chords').focus();
+    if (p) {
+      state.chords = p.chords; state.bars = p.bars; state.shapeIdx = {};
+      if (p.pattern && patById[p.pattern]) state.pattern = p.pattern;
+      if (p.bpm) state.bpm = p.bpm;
+      syncControls(); schedule();
+    } else $('cp-chords').focus();
+  });
+  $('cp-sugg').addEventListener('click', e => {
+    const id = e.target.dataset && e.target.dataset.id;
+    if (id && patById[id]) { state.pattern = id; syncControls(); schedule(); }
   });
   $('cp-chords').addEventListener('input', e => { state.chords = e.target.value; state.shapeIdx = {}; schedule(); });
   $('cp-shapes').addEventListener('change', e => { state.shapeIdx[+e.target.dataset.i] = +e.target.value; schedule(); });
   $('cp-pattern').addEventListener('change', e => {
+    if (kind === 'song') { if (songMeta && songMeta.onPattern) songMeta.onPattern(e.target.value); return; }
     state.pattern = e.target.value; const p = patById[state.pattern];
-    state.bpm = clamp(state.bpm, p.bpm[0], p.bpm[1]); syncControls(); schedule();
+    if (p.bpm) state.bpm = clamp(state.bpm, p.bpm[0], p.bpm[1]);
+    syncControls(); schedule();
   });
   $('cp-bpm').addEventListener('input', e => { $('cp-bpm-out').textContent = e.target.value; });
-  $('cp-bpm').addEventListener('change', e => { state.bpm = +e.target.value; schedule(); });
+  $('cp-bpm').addEventListener('change', e => { state.bpm = +e.target.value; syncControls(); schedule(); });
   $('cp-bars').addEventListener('change', e => { state.bars = +e.target.value; schedule(); });
   $('cp-sound').addEventListener('change', e => { state.sound = e.target.value; schedule(); });
   $('cp-hand').addEventListener('change', e => { state.hand = e.target.value; schedule(); });
@@ -222,15 +304,16 @@ export function initChords(ctx) {
   $('cp-palm').addEventListener('change', e => { state.palm = e.target.checked; schedule(); });
   $('cp-play').addEventListener('click', () => { ctx.setPlaying(!ctx.isPlaying()); $('cp-play').blur(); });
   $('cp-setup').addEventListener('click', () => { const set = $('cp-set'); set.hidden = !set.hidden; $('cp-setup').setAttribute('aria-expanded', String(!set.hidden)); ctx.resize && ctx.resize(); });
-  if (modeBtn) modeBtn.addEventListener('click', () => { if (active) { deactivate(); ctx.restore(); } else activate(); modeBtn.blur(); });
+  if (modeBtn) modeBtn.addEventListener('click', () => { if (active && kind === 'practice') { deactivate(); ctx.restore(); } else activate(); modeBtn.blur(); });
 
   async function activate() {
-    if (active) return;
+    if (active && kind === 'practice') return;
+    if (active && kind === 'song') { leaveSong(); if (ctx.leaveSong) ctx.leaveSong(); }
     await ensureData();
-    active = true;
+    active = true; kind = 'practice';
     document.body.classList.add('chords');
     panel.hidden = false;
-    if (modeBtn) { modeBtn.setAttribute('aria-pressed', 'true'); modeBtn.textContent = 'Chords: on'; }
+    if (modeBtn) { modeBtn.setAttribute('aria-pressed', 'true'); modeBtn.textContent = 'Chord practice: on'; }
     const set = $('cp-set');
     if (window.innerWidth > 700 && set.hidden) { set.hidden = false; $('cp-setup').setAttribute('aria-expanded', 'true'); }
     syncControls();
@@ -240,19 +323,47 @@ export function initChords(ctx) {
   function deactivate() {
     if (!active) return;
     active = false; buildTok++; song = null; curChord = -2;
+    leaveSong();
     document.body.classList.remove('chords');
     panel.hidden = true;
-    if (modeBtn) { modeBtn.setAttribute('aria-pressed', 'false'); modeBtn.textContent = 'Chords'; }
+    if (modeBtn) { modeBtn.setAttribute('aria-pressed', 'false'); modeBtn.textContent = 'Chord practice'; }
+  }
+  function leaveSong() {
+    if (kind !== 'song') return;
+    kind = 'practice'; songMeta = null; panel.classList.remove('song'); dropCustomOption();
+    if (lib) syncControls();
+  }
+
+  /**
+   * Show a song as chords (built by js/songchords.js, already loaded into the page by main.js): chord name, diagrams,
+   * pattern strip with the detected (or suggested) pattern and tempo preselected. meta: {label, patternId, pattern, tempo,
+   * detected, synthetic, confidence, meter, detectedGrid, chordSource, sound, onPattern(id)}.
+   */
+  async function showSong(cs, meta) {
+    await ensureData();
+    buildTok++;
+    active = true; kind = 'song'; songMeta = meta; song = cs; curChord = nextChord = -2;
+    document.body.classList.add('chords');
+    panel.classList.add('song'); panel.hidden = false;
+    if (modeBtn) { modeBtn.setAttribute('aria-pressed', 'false'); modeBtn.textContent = 'Chord practice'; }
+    const set = $('cp-set');
+    if (window.innerWidth > 700 && set.hidden) { set.hidden = false; $('cp-setup').setAttribute('aria-expanded', 'true'); }
+    syncControls();
+    const h = document.querySelector('.learn-head'); if (h) document.documentElement.style.setProperty('--cp-head', h.offsetHeight + 'px');
   }
 
   // ---------- per-frame teaching UI ----------
-  const chordAt = T => { let k = 0; song.chords.forEach((c, i) => { if (T >= c.t0 - 1e-6) k = i; }); return k; };
+  const chordAt = T => {
+    const c = song.chords; let lo = 0, hi = c.length - 1, k = 0;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (T >= c[m].t0 - 1e-6) { k = m; lo = m + 1; } else hi = m - 1; }
+    return k;
+  };
   function showChord(k) {
     const c = song.chords, n = c.length;
     curChord = k;
     $('cp-name').textContent = c[k].symbol;
     $('cp-dia-cur').innerHTML = diagramSVG(c[k]) + '<span>now</span>';
-    const nx = state.loop ? (k + 1) % n : k + 1 < n ? k + 1 : -1;
+    const nx = state.loop && kind === 'practice' ? (k + 1) % n : k + 1 < n ? k + 1 : -1;
     nextChord = nx;
     $('cp-next').innerHTML = nx >= 0 ? `next: <b>${c[nx].symbol}</b>` : 'last chord';
     $('cp-dia-next').innerHTML = nx >= 0 ? diagramSVG(c[nx]) + '<span>next</span>' : '';
@@ -273,11 +384,15 @@ export function initChords(ctx) {
   function drawStrip(T) {
     const [W, H] = fitCanvas();
     if (!W || !song) return;
-    const p = song.pattern, isPick = p.type === 'pick';
-    const toks = isPick ? p.steps : p.grid.split(/\s+/), N = toks.length;
-    const barDur = song.barDur, tb = T - song.startT;
-    const frac = tb < 0 ? 0 : (tb % barDur) / barDur, stepNow = tb < 0 ? -1 : Math.floor(frac * N + 1e-9), barNo = Math.floor(Math.max(0, tb) / barDur);
     const k = chordAt(T), c = song.chords[k];
+    // the current chord's pattern, restarted on the chord change; position on the nominal beat clock (songs: follows the recording)
+    const p = c.pattern || song.pattern, isPick = p.type === 'pick';
+    const toks = patternTokens(p), N = toks.length, bpb = p.beats_per_bar;
+    const beatsNow = song.posAt ? song.posAt(T) : (T - song.startT) * song.bpm / 60;
+    const tb = beatsNow, inChord = beatsNow - (c.beat0 || 0), cBeats = c.beats || c.bars * bpb;
+    const barIn = Math.floor(Math.max(0, inChord) / bpb + 1e-9);
+    const frac = tb < 0 ? 0 : Math.min(0.999999, Math.max(0, inChord - barIn * bpb) / bpb), stepNow = tb < 0 ? -1 : Math.floor(frac * N + 1e-9);
+    const stepsLeft = (cBeats - barIn * bpb) / p.step_beats;          // steps of this bar that still belong to the chord (partial bars)
     g2.fillStyle = '#0d0f14'; g2.fillRect(0, 0, W, H);
     const pad = 16, wStep = (W - 2 * pad) / N, xs = i => pad + (i + 0.5) * wStep;
     const small = H < 110;
@@ -285,10 +400,12 @@ export function initChords(ctx) {
     // header: chord, bar of chord, beats to the change
     g2.font = '700 13px system-ui, sans-serif'; g2.textBaseline = 'middle'; g2.textAlign = 'left';
     g2.fillStyle = '#ffb347'; g2.fillText(c.symbol, pad, 12);
-    const barInChord = clamp(Math.floor((Math.max(0, T - c.t0)) / barDur) + 1, 1, c.bars);
+    const wholeBars = Math.abs(cBeats / bpb - Math.round(cBeats / bpb)) < 1e-9;
+    const where = wholeBars ? `bar ${clamp(barIn + 1, 1, Math.round(cBeats / bpb))}/${Math.round(cBeats / bpb)}`
+      : `beat ${clamp(Math.floor(Math.max(0, inChord)) + 1, 1, Math.ceil(cBeats))}/${cBeats}`;
     g2.fillStyle = '#aab2c0'; g2.font = '12px system-ui, sans-serif';
-    g2.fillText(`bar ${barInChord}/${c.bars}${tb < 0 ? '  ·  count in' : ''}`, pad + 8 + g2.measureText(c.symbol).width + 4, 12);
-    g2.textAlign = 'right'; g2.fillText(`${p.name} · ${state.bpm} bpm`, W - pad, 12); g2.textAlign = 'left';
+    g2.fillText(`${where}${tb < 0 ? '  ·  count in' : ''}`, pad + 8 + g2.measureText(c.symbol).width + 4, 12);
+    g2.textAlign = 'right'; g2.fillText(`${p.name || 'Detected pattern'} · ${Math.round(song.bpm)} bpm${kind === 'song' && songMeta && songMeta.detected && p === song.pattern ? ' (detected)' : ''}`, W - pad, 12); g2.textAlign = 'left';
     // current step band
     if (stepNow >= 0) {
       const tn = (frac * N) - stepNow;
@@ -298,7 +415,7 @@ export function initChords(ctx) {
     toks.forEach((raw, i) => {
       const x = xs(i);
       const played = stepNow >= 0 && i < stepNow, isNow = i === stepNow;
-      const alpha = isNow ? 1 : played ? 0.9 : 0.62;
+      const alpha = (isNow ? 1 : played ? 0.9 : 0.62) * (i >= stepsLeft - 1e-6 ? 0.25 : 1);   // steps after the change: next chord
       if (isPick) {
         g2.globalAlpha = alpha; g2.fillStyle = raw.startsWith('p') ? '#ffb347' : '#4cc9f0';
         g2.beginPath(); g2.roundRect(x - wStep * 0.34, cy - size * 0.55, wStep * 0.68, size * 1.1, 6); g2.fill();
@@ -333,16 +450,17 @@ export function initChords(ctx) {
   }
 
   return {
-    activate, deactivate, get active() { return active; }, state, get song() { return song; }, get ready() { return !!lib; },
+    activate, deactivate, showSong, ensureData, get kind() { return active ? kind : null; }, get active() { return active; }, state,
+    get song() { return song; }, get ready() { return !!lib; },
     update(T) {
       if (!active || !song) return;
       try {
-        if (ctx.isPlaying() && T >= song.total - 0.004) {       // end of the progression: loop (back to the first stroke) or stop
+        if (kind === 'practice' && ctx.isPlaying() && T >= song.total - 0.004) {   // end of the progression: loop (back to the first stroke) or stop
           if (state.loop) ctx.seek(song.startT); else { ctx.setPlaying(false); ctx.seek(0); }
         }
         const k = chordAt(T);
         if (k !== curChord) showChord(k);
-        const c = song.chords[k], beat = 60 / state.bpm;
+        const c = song.chords[k], beat = 60 / song.bpm;
         $('cp-name').classList.toggle('soon', c.t1 - T < 1.0 * beat && c.t1 - T > 0);
         const pl = ctx.isPlaying(), btn = $('cp-play');
         if (btn.getAttribute('aria-pressed') !== String(pl)) { btn.setAttribute('aria-pressed', String(pl)); btn.textContent = pl ? 'Pause' : 'Play'; }

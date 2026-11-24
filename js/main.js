@@ -7,11 +7,12 @@ import { prepareTimeline } from './timeline.js';
 import { HandRig } from './hand.js';
 import { Performer } from './performer.js';
 import { HAND_LEFT, HAND_RIGHT } from './hand-assets.js';
-import { renderSong } from './synth.js';
+import { renderSong, renderStrokes } from './synth.js';
 import { initChords } from './chords-mode.js';   // Chords practice mode: progression, strum pattern, diagrams (js/chords-mode.js)
 import { initLearn } from './learn.js';   // tab strip, lesson markers, hands toggle, lesson cam (js/learn.js)
 import { ChordPanel } from './chordpanel.js';
 import { loadSongAudio, shiftScore } from './song-audio.js';
+import { buildSongChords, isChordal } from './songchords.js';   // a song as chords + strumming (Chords / Notes view)
 
 let SONGS = {};   // filled from data/songs.json (written by the tab-viewer build)
 const FINGER_COLORS = [0x4cc9f0, 0x80ed99, 0xffd166, 0xef476f];
@@ -85,6 +86,7 @@ const chordPanel = new ChordPanel();   // implied chord + diagram (js/harmony.js
 const chords = initChords({
   now: () => now(), seek: t => seek(t), isPlaying: () => playing, setPlaying: p => setPlaying(p),
   load: cs => loadChordSong(cs), restore: () => loadSong(songKey), resize: () => resize(),
+  leaveSong: () => leaveSongView(),
 });
 
 // ---------- state ----------
@@ -126,6 +128,9 @@ document.addEventListener('visibilitychange', () => poke());
 { const m = THREE.DefaultLoadingManager, prev = m.onLoad; m.onLoad = (...a) => { poke(); if (prev) prev(...a); }; m.onProgress = () => poke(); }
 const setText = (el, s) => { if (el.textContent !== s) el.textContent = s; };
 let sourceReady = false, pendingPlay = false, songLoad = 0;
+// what is playing: 'recording' | 'file' | 'yt' | 'synth' (from the tab) | 'chordsynth' (strummed chords) | null; the note
+// events and the tab synth are kept so the Chords / Notes view switch can swap back without reloading
+let audioSource = null, noteEvents = [], noteSynthBlob = null;
 function setUi(p) {
   playing = p;
   poke();
@@ -156,14 +161,14 @@ async function loadChordSong(cs) {
   let src = null;
   try { src = URL.createObjectURL(await cs.renderAudio()); } catch (e) { console.error(e); }
   if (my !== chordLoad) return;
-  setAudio(src, 'synth', cs.label);
+  setAudio(src, 'chordsynth', cs.label);
   duration = cs.total; ui.scrub.max = duration;
   sourceIsReady();
   if (wasPlaying) setPlaying(true);
 }
 
 async function loadSong(key) {
-  if (typeof chords !== 'undefined') { chordLoad++; chords.deactivate(); }   // the playback test harness loads main.js without chord mode
+  if (typeof chords !== 'undefined') { chordLoad++; chords.deactivate(); resetSongView(); }   // the playback test harness loads main.js without chord mode
   const load = ++songLoad;
   const song = SONGS[key];
   songKey = key;
@@ -177,6 +182,7 @@ async function loadSong(key) {
   if (load !== songLoad) return;
   if (recording) score = shiftScore(score, -(song.audioOffset || 0));
   events = prepareTimeline(solveFingering(normalizeScore(score)), song.mode);
+  noteEvents = events; noteSynthBlob = null;
   if (perf) perf.setEvents(events);
   learn.setEvents(events);
   try { chordPanel.setScore(score, events); } catch (e) { console.warn('harmony', e); chordPanel.setSegments([]); }
@@ -195,10 +201,11 @@ async function loadSong(key) {
     try {
       await yt.load(song.video, song.label);
       if (load !== songLoad) return;
-      audio.pause(); audioOK = false; ytActive = true;
+      audio.pause(); audioOK = false; ytActive = true; audioSource = 'yt';
       yt.setRate(parseFloat(ui.rate.value)); seek(0);
       setStatus(`${summary} · sound: original video (YouTube)`);
       sourceIsReady();
+      if (typeof chords !== 'undefined') await prepareSongView(load, key, song, score);
       return;
     } catch (e) { console.warn(e); }
   }
@@ -209,12 +216,13 @@ async function loadSong(key) {
     try {
       const blob = await renderSong(normalizeScore(score), song.mode, duration + 1.5);
       if (load !== songLoad) return;
-      src = URL.createObjectURL(blob); source = 'synth';
+      src = URL.createObjectURL(blob); source = 'synth'; noteSynthBlob = blob;
     } catch (e) { console.error(e); }
   }
   if (load !== songLoad) return;
   setAudio(src, source, summary);
   sourceIsReady();
+  if (typeof chords !== 'undefined') await prepareSongView(load, key, song, score);   // Chords / Notes view (not in the playback test harness)
 }
 function sourceIsReady() {
   sourceReady = true;
@@ -227,10 +235,10 @@ let lastSummary = '';
 function setAudio(src, source, summary = lastSummary) {
   lastSummary = summary;
   if (audio.src.startsWith('blob:')) URL.revokeObjectURL(audio.src);
-  audioOK = !!src;
+  audioOK = !!src; audioSource = src ? source : null;
   if (src) { audio.src = src; audio.playbackRate = parseFloat(ui.rate.value); }
   seek(0);
-  const label = { recording: 'original recording', synth: 'synth guitar from the tab', file: 'your recording' }[source] || 'no audio';
+  const label = { recording: 'original recording', synth: 'synth guitar from the tab', chordsynth: 'synth guitar strumming the chords', file: 'your recording' }[source] || 'no audio';
   setStatus(`${summary} · sound: ${src ? label : 'no audio'}`);
 }
 
@@ -251,6 +259,117 @@ Promise.all([loadHand('left'), loadHand('right')]).then(([l, r]) => {
   const idle = cb => (window.requestIdleCallback ? requestIdleCallback(cb, { timeout: 600 }) : setTimeout(cb, 120));
   requestAnimationFrame(() => idle(() => { left.refine(); poke(); idle(() => { right.refine(); poke(); }); }));
 }).catch(err => { ui.loading.textContent = 'Hand model failed to load'; console.error(err); });
+
+// ---------- song: Chords / Notes view ----------
+// A song with a chord track (score.chords [+ score.strum], or data/chords-<id>.json for site songs) can also be shown as
+// chords + strumming (js/songchords.js -> strumProgression -> buildChordSong). That chord song is built on the song's own
+// clock (recording / YouTube), so the original sound keeps playing under it; with only the tab synth (or no audio) the strokes
+// are synthesised instead (synth.renderStrokes). Chordal songs (a strum was detected, or chord-agreement finds mostly chords)
+// open in Chords view, the rest in Notes view.
+const sv = { box: $('songview'), notes: $('sv-notes'), chords: $('sv-chords') };
+let songView = 'notes', svSrc = null, svBuilt = null, svPattern = null, svAudio = null, svTok = 0, svSong = null, svDuration = 1;
+const svMode = () => (svSong && svSong.mode === 'pick' ? 'pick' : 'clean');
+function markSongView() {
+  if (!sv.box) return;
+  sv.notes.setAttribute('aria-pressed', String(songView === 'notes'));
+  sv.chords.setAttribute('aria-pressed', String(songView === 'chords'));
+}
+function resetSongView() {
+  svTok++; svSrc = null; svBuilt = null; svPattern = null; svAudio = null; svSong = null; songView = 'notes';
+  if (sv.box) sv.box.hidden = true;
+  markSongView();
+}
+// chord practice mode took over the page (its own events and sound); loadSong() restores everything when it ends
+function leaveSongView() { svTok++; songView = null; markSongView(); }   // neither Notes nor Chords pressed while practising
+
+/** the song's chord track on the page clock: score.chords/strum, else data/chords-<id>.json (shifted by its offset) */
+async function songChordTrack(key, song, score) {
+  if (Array.isArray(score.chords) && score.chords.length) return { chords: score.chords, strum: score.strum || null, engine: song.user ? 'detected in your recording' : null };
+  if (song.user) return null;
+  try {
+    const r = await fetch(`data/chords-${key}.json`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!Array.isArray(d.chords) || !d.chords.length) return null;
+    const strum = d.strum && d.strum.pattern && Array.isArray(d.strum.strokes) ? d.strum : null;
+    const s = shiftScore({ notes: [], chords: d.chords, ...(strum ? { strum } : {}) }, d.offset || 0);
+    return { chords: s.chords, strum: s.strum || null, engine: d.chord_engine || null };
+  } catch (e) { return null; }
+}
+
+async function prepareSongView(load, key, song, score) {
+  resetSongView();
+  const track = await songChordTrack(key, song, score);
+  if (load !== songLoad || !track) return;
+  svSong = song; svDuration = duration;
+  svSrc = { chords: track.chords, strum: track.strum, grid: score.grid, bpm: score.bpm, mode: song.mode, engine: track.engine };
+  if (sv.box) sv.box.hidden = false;
+  let chordal = false;
+  try { chordal = isChordal({ strum: track.strum, events: noteEvents }); } catch (e) { console.warn(e); }
+  if (chordal) await setSongView('chords');
+}
+
+/** switch the loaded song between Notes (the tab) and Chords (chords + strumming); patternId: another library pattern */
+async function setSongView(v, opts = {}) {
+  if (!svSrc) return;
+  const my = ++svTok, T = now(), wasPlaying = playing;
+  const swapAudio = async (blob, source) => {
+    setPlaying(false);
+    setAudio(blob ? URL.createObjectURL(blob) : null, source);
+    seek(T);
+    if (wasPlaying) setPlaying(true);
+  };
+  if (v === 'chords') {
+    const data = await chords.ensureData();
+    if (my !== svTok) return;
+    if (!svBuilt || 'patternId' in opts) {
+      let r = null;
+      try { r = buildSongChords(svSrc, data.lib, data.pats, { patternId: 'patternId' in opts ? opts.patternId : svPattern }); } catch (e) { console.error(e); }
+      if (!r) { setStatus(`${svSong.label}: no chords to show`); return; }
+      if ('patternId' in opts) svPattern = opts.patternId;
+      svBuilt = r; svAudio = null;
+    }
+    const { cs, meta } = svBuilt;
+    songView = 'chords'; markSongView();
+    events = cs.events;
+    if (perf) perf.setEvents(events);
+    learn.setEvents(events);
+    duration = Math.max(svDuration, cs.total + 1); ui.scrub.max = duration;
+    // sound: the recording / video when there is one (same clock), else the strummed chords from the synth
+    const synthOnly = !ytActive && (audioSource === 'synth' || audioSource === 'chordsynth' || audioSource == null);
+    if (synthOnly) {
+      if (!svAudio) {
+        setPlaying(false);
+        setStatus(`Generating the strummed chords for ${svSong.label}…`);
+        try { svAudio = await renderStrokes(cs.strokes, svMode(), cs.total + 2.2); } catch (e) { console.error(e); }
+        if (my !== svTok) return;
+      }
+      await swapAudio(svAudio, 'chordsynth');
+    }
+    const soundLabel = ytActive ? 'original video (YouTube)' : { recording: 'original recording', file: 'your recording', chordsynth: 'synth strumming the chords' }[audioSource] || 'no audio';
+    const engine = svSrc.engine ? (/btc/i.test(svSrc.engine) ? 'chords detected from the recording (BTC)' : /chroma/i.test(svSrc.engine) ? 'chords detected from the recording (chroma)' : svSrc.engine) : 'chords detected from the recording';
+    await chords.showSong(cs, {
+      ...meta, label: svSong.label, chordSource: engine, sound: soundLabel,
+      onPattern: id => setSongView('chords', { patternId: id === meta.patternId ? svPattern : id }),
+    });
+    if (my !== svTok) return;
+    setStatus(`${svSong.label} as chords · ${meta.pattern.name || meta.patternId} · ${Math.round(meta.tempo)} bpm${meta.detected ? ' (detected)' : ''} · sound: ${soundLabel}`);
+  } else {
+    songView = 'notes'; markSongView();
+    chords.deactivate();
+    events = noteEvents;
+    if (perf) perf.setEvents(events);
+    learn.setEvents(events);
+    duration = svDuration; ui.scrub.max = duration;
+    if (audioSource === 'chordsynth') await swapAudio(noteSynthBlob, 'synth');
+    else setStatus(lastSummary + ' · notes view');
+  }
+}
+async function pickSongView(v) {
+  if (chords.kind === 'practice') { chords.deactivate(); await loadSong(songKey); }   // leave chord practice: reload the song first
+  if (v !== songView || (v === 'chords' && chords.kind !== 'song')) await setSongView(v);
+}
+if (sv.box) for (const v of ['notes', 'chords']) sv[v].addEventListener('click', () => { sv[v].blur(); pickSongView(v); });
 
 // ---------- per-frame ----------
 let followTarget = null;

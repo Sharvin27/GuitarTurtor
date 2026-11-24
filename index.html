@@ -41,6 +41,12 @@
   label.file:hover { background: var(--btn-hover); }
   .linkbtn { color: var(--text); background: var(--btn); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; min-height: 36px; display: inline-flex; align-items: center; text-decoration: none; }
   .linkbtn:hover { background: var(--btn-hover); }
+  .seg { display: inline-flex; }
+  .seg[hidden] { display: none; }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #14161b; font-weight: 600; }
   label.file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
   .legend { display: inline-flex; gap: 10px; font-size: 12px; color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
@@ -59,18 +65,19 @@
     "./js/audio-chords.js": "./js/audio-chords.js?v=5e6a940615",
     "./js/chord-agreement.js": "./js/chord-agreement.js?v=084f95c378",
     "./js/chordpanel.js": "./js/chordpanel.js?v=3c997c3bd6",
-    "./js/chords-mode.js": "./js/chords-mode.js?v=73a69672c9",
-    "./js/chordsong.js": "./js/chordsong.js?v=9315aec1dd",
-    "./js/fingering.js": "./js/fingering.js?v=f432b99663",
+    "./js/chords-mode.js": "./js/chords-mode.js?v=6ba6e58496",
+    "./js/chordsong.js": "./js/chordsong.js?v=7f61fcf3ee",
+    "./js/fingering.js": "./js/fingering.js?v=b79f549da6",
     "./js/guitar.js": "./js/guitar.js?v=b2035c0bb4",
     "./js/hand-assets.js": "./js/hand-assets.js?v=734fe538b3",
     "./js/hand.js": "./js/hand.js?v=12a1c35fad",
     "./js/harmony.js": "./js/harmony.js?v=c706b78929",
     "./js/learn.js": "./js/learn.js?v=2d95b0b374",
-    "./js/main.js": "./js/main.js?v=9e18b896e2",
+    "./js/main.js": "./js/main.js?v=6258f66266",
     "./js/markers.js": "./js/markers.js?v=3e79f88c05",
     "./js/performer.js": "./js/performer.js?v=389d2fd5c0",
     "./js/song-audio.js": "./js/song-audio.js?v=508927f5b5",
+    "./js/songchords.js": "./js/songchords.js?v=1e127215f7",
     "./js/songmaker.js": "./js/songmaker.js?v=853b4fb3f6",
     "./js/strumdetect.js": "./js/strumdetect.js?v=1f8d2fa78a",
     "./js/strumhand.js": "./js/strumhand.js?v=ddc20ea49f",
@@ -78,8 +85,8 @@
     "./js/synth.js": "./js/synth.js?v=4047f3e203",
     "./js/tabstrip.js": "./js/tabstrip.js?v=93e7f68297",
     "./js/theory.js": "./js/theory.js?v=c9eb754cfc",
-    "./js/timeline.js": "./js/timeline.js?v=9561ff5a67",
-    "./chords/strum_model.js": "./chords/strum_model.js?v=4ca36a75ee",
+    "./js/timeline.js": "./js/timeline.js?v=21e5357f41",
+    "./chords/strum_model.js": "./chords/strum_model.js?v=6074a545a0",
     "./chords/chordnamer.js": "./chords/chordnamer.js?v=7a98aa55ed"
   }
 }
@@ -88,19 +95,19 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js" crossorigin>
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js" crossorigin>
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js" crossorigin>
-<link rel="modulepreload" href="js/main.js?v=9e18b896e2">
+<link rel="modulepreload" href="js/main.js?v=6258f66266">
 <link rel="modulepreload" href="js/guitar.js?v=b2035c0bb4">
-<link rel="modulepreload" href="js/fingering.js?v=f432b99663">
-<link rel="modulepreload" href="js/timeline.js?v=9561ff5a67">
+<link rel="modulepreload" href="js/fingering.js?v=b79f549da6">
+<link rel="modulepreload" href="js/timeline.js?v=21e5357f41">
 <link rel="modulepreload" href="js/hand.js?v=12a1c35fad">
 <link rel="modulepreload" href="js/subdivide.js?v=94d1f9485e">
 <link rel="modulepreload" href="js/performer.js?v=389d2fd5c0">
 <link rel="modulepreload" href="js/strumhand.js?v=ddc20ea49f">
 <link rel="modulepreload" href="js/hand-assets.js?v=734fe538b3">
 <link rel="modulepreload" href="js/synth.js?v=4047f3e203">
-<link rel="modulepreload" href="js/chords-mode.js?v=73a69672c9">
-<link rel="modulepreload" href="js/chordsong.js?v=9315aec1dd">
-<link rel="modulepreload" href="chords/strum_model.js?v=4ca36a75ee">
+<link rel="modulepreload" href="js/chords-mode.js?v=6ba6e58496">
+<link rel="modulepreload" href="js/chordsong.js?v=7f61fcf3ee">
+<link rel="modulepreload" href="chords/strum_model.js?v=6074a545a0">
 <link rel="modulepreload" href="js/learn.js?v=2d95b0b374">
 <link rel="modulepreload" href="js/tabstrip.js?v=93e7f68297">
 <link rel="modulepreload" href="js/markers.js?v=3e79f88c05">
@@ -110,6 +117,8 @@
 <link rel="modulepreload" href="js/chord-agreement.js?v=084f95c378">
 <link rel="modulepreload" href="chords/chordnamer.js?v=7a98aa55ed">
 <link rel="modulepreload" href="js/song-audio.js?v=508927f5b5">
+<link rel="modulepreload" href="js/songchords.js?v=1e127215f7">
+<link rel="modulepreload" href="js/strumdetect.js?v=1f8d2fa78a">
 </head>
 <body>
 <div id="stage"></div>
@@ -117,9 +126,10 @@
 <div class="bar" id="top">
   <h1>Guitar Hand 3D</h1>
   <select id="song" aria-label="Song"></select>
+  <span id="songview" class="seg" role="group" aria-label="Show the song as" hidden><button id="sv-notes" aria-pressed="true" title="Play the tab note by note">Notes</button><button id="sv-chords" aria-pressed="false" title="Play the song as chords with the strumming pattern">Chords</button></span>
   <a id="tabslink" class="linkbtn" href="tabs.html">Tab view</a>
   <a class="linkbtn" href="create.html">+ Add a song</a>
-  <button id="mode-chords" aria-pressed="false" title="Chord strumming practice: progression, strum pattern, diagrams">Chords</button>
+  <button id="mode-chords" aria-pressed="false" title="Chord strumming practice: progression, strum pattern, diagrams">Chord practice</button>
   <span id="status"></span>
   <span class="legend"><span><i style="background:#4cc9f0"></i>index</span><span><i style="background:#80ed99"></i>middle</span><span><i style="background:#ffd166"></i>ring</span><span><i style="background:#ef476f"></i>pinky</span><span><i style="background:#fff"></i>open</span></span>
 </div>
@@ -137,6 +147,6 @@
 </div>
 <script src="js/yt.js?v=080657586f"></script>
 <script src="js/user-songs.js?v=48d8d05ec1"></script>
-<script type="module" src="js/main.js?v=9e18b896e2"></script>
+<script type="module" src="js/main.js?v=6258f66266"></script>
 </body>
 </html>
