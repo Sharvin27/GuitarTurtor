@@ -67,6 +67,8 @@ def finalize(events, capo=0, tuning=(64, 59, 55, 50, 45, 40)):
                 e["legato"] = True
                 if TECH[via] == "slide" and len(e["notes"]) == 1:
                     e["glide"] = True
+            if n.get("slide_out"):
+                n["slide"] = 1
             if via == "r" and prev:
                 n = dict(n); n["rel"] = 1; e["legato"] = True; e["glide"] = len(e["notes"]) == 1
             out.append(n)

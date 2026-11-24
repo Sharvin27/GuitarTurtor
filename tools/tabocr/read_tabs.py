@@ -12,7 +12,7 @@ import os, sys, json, copy, argparse, pickle
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import video, detect, ocr, tabseq, align  # noqa: E402
+import video, detect, ocr, tabseq, align, sanity  # noqa: E402
 
 NOTE = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
@@ -39,10 +39,12 @@ def read_video_tabs(path, start, end, fps, debug=None):
     else:
         log("tracking tab pages ...")
         pages, intervals = detect.track_pages(video.frames(path, fps=fps, start=start, end=end), log=log)
+        for p in pages:      # keep only the median frame (small cache, same pixels the OCR uses)
+            p["crops"] = [ocr.median_frame(p["crops"])]
         if cache_key:
             pickle.dump((pages, intervals), open(cache_key, "wb"))
     log(f"{len(pages)} distinct tab pages, {len(intervals)} visible intervals")
-    systems = ocr.read_pages(pages, log=log)
+    systems = ocr.read_pages(pages, log=log, debug=debug)
     return pages, intervals, systems
 
 
@@ -97,6 +99,7 @@ def passes_for_interval(evs, aud, lo, hi, capo, tuning, min_frac, min_sal, vis=N
     t = np.clip(t, min(lo, mt.min()), max(hi, mt.max()))
     for i in range(1, len(t)):
         t[i] = max(t[i], t[i - 1] + 0.01)
+    sanity.annotate_audio(ev, assign, aud)
     res = [dict(events=ev, assign=assign, t=t, T=T, frac=frac, sal=sal)]
     if depth < 4 and vis is not None:
         a, b = mt.min(), mt.max()
@@ -155,6 +158,12 @@ def build_score(passes, label):
                 for k in ("slide", "ham", "pull", "bend", "rel", "vib", "pm"):
                     if n.get(k):
                         nt[k] = n[k] if k == "bend" else 1
+            ns = sorted(e["notes"], key=lambda n: n["s"])
+            nt["conf"] = round(float(min(n.get("conf", 1.0) for n in ns)), 2)
+            nt["cn"] = [round(float(n.get("conf", 1.0)), 2) for n in ns]
+            fl = sorted({f for n in ns for f in n.get("flags", [])})
+            if fl:
+                nt["flags"] = fl
             nt["sec"] = f"{label} p{p['page'] + 1}||3"
             notes.append(nt)
         for i, b in enumerate(bars):
@@ -206,6 +215,7 @@ def main():
     log("video:", path)
     pages, intervals, systems = read_video_tabs(path, a.start, a.end, a.fps, a.debug)
     pev = page_event_lists(systems)
+    sanity.check_pages(pev, tun, a.capo)
     if a.debug:
         from PIL import Image
         with open(os.path.join(a.debug, "tab.txt"), "w", encoding="utf-8") as f:
@@ -237,6 +247,7 @@ def main():
         frac, sal = align.quality(ev, assign, aud)
         log(f"global alignment: matched {frac:.0%}, pitch evidence {sal:.2f}, beat {T}")
         t = interp_times(ev, assign, aud, T)
+        sanity.annotate_audio(ev, assign, aud)
         passes.append(dict(events=ev, assign=assign, t=t, T=T, page=intervals[0][0] if intervals else 0))
     else:
         prev_end = a.start or 0.0

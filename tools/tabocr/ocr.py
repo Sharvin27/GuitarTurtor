@@ -8,6 +8,9 @@ import glyphs
 WHITELIST = "0123456789hpbr/\\~x()"
 
 
+ASCII_NEW = os.environ.get("TABOCR_ASCII", "new") == "new"     # monospace tabs through the glyph-cluster reader
+
+
 def tesseract():
     p = os.environ.get("TESSERACT") or shutil.which("tesseract")
     if p:
@@ -110,15 +113,23 @@ def segment_staff(gray, staff, pol):
         left = xs[xs <= x0 + 0.6 * sp]
         if len(left) >= 4 and left.max() - left.min() < 0.5 * sp:
             lab_w = (0.9 * adv if ascii_tab else 0.6 * sp)
+            ends = np.array([s["segs"][0][1] for s in strings if s["segs"] and s["segs"][0][0] <= left.max() + 1])
+            if ascii_tab and len(ends) >= 4 and ends.max() - ends.min() <= 3:
+                for s in strings:           # "e|" "B|": label letters + bar line end at one common x
+                    if s["segs"] and s["segs"][0][0] <= left.max() + 1:
+                        s["segs"] = s["segs"][1:]
+                lab_w = None
             for s in strings:
                 segs = []
                 for g in s["segs"]:
-                    if g[0] <= left.max() + 1:
+                    if lab_w is not None and g[0] <= left.max() + 1:
                         g = [int(g[0] + lab_w), g[1]]      # "e/16": keep what follows the label
                         sub = s["glyph"][g[0]:g[1]]
                         if sub.sum() < 0.15 * sp:
                             continue
                         g[0] += int(np.argmax(sub))
+                        if ascii_tab and g[1] - g[0] < 0.4 * adv:      # the "|" after the label
+                            continue
                     segs.append(g)
                 s["segs"] = segs
     return dict(ys=ys, hw=hw, bars=bars, ascii=ascii_tab, adv=adv if ascii_tab else None,
@@ -182,7 +193,7 @@ def _components(m, a0, sp, line_row):
     return out
 
 
-def run_tesseract(tokens, psm=6):
+def run_tesseract(tokens, psm=6, wl=None):
     """tokens: list of uint8 images. Returns list of strings (one per token)."""
     if not tokens:
         return []
@@ -197,7 +208,7 @@ def run_tesseract(tokens, psm=6):
     fd, path = tempfile.mkstemp(suffix=".png"); os.close(fd)
     try:
         Image.fromarray(sheet).save(path)
-        cmd = [tesseract(), path, "stdout", "--psm", str(psm), "-c", "tessedit_char_whitelist=" + WHITELIST,
+        cmd = [tesseract(), path, "stdout", "--psm", str(psm), "-c", "tessedit_char_whitelist=" + (wl or WHITELIST),
                "-c", "load_system_dawg=0", "-c", "load_freq_dawg=0", "tsv"]
         out = subprocess.run(cmd, capture_output=True, text=True).stdout
     finally:
@@ -241,15 +252,29 @@ def parse_token(text):
     return items
 
 
-def read_pages(pages, log=None):
+def read_pages(pages, log=None, debug=None):
     """OCR every page. pages: list of dict(staves, pol, crops). Returns per page a list of systems:
-    dict(bars, notes=[dict(s, x, fret, via, vib, dead, ghost, txt)], ascii, adv, x0, x1, sp)."""
+    dict(bars, notes=[dict(s, x, fret, via, vib, dead, ghost, txt, conf)], ascii, adv, x0, x1, sp).
+    ASCII tabs go through Tesseract tokens; rendered (Guitar Pro style) tabs through rendered.py."""
+    import rendered
     allsys = []
+    rinfos = []          # rendered staves
     for pi, p in enumerate(pages):
         gray = median_frame(p["crops"])
         systems = []
         for staff in p["staves"]:
             info = segment_staff(gray, staff, p["pol"])
+            if not info["ascii"]:
+                comps, arcs = rendered.staff_components(gray, staff, p["pol"], info["ys"], info["bars"])
+                comps = rendered.split_wide(comps, 0)
+                info.pop("ink", None)
+                for s in info["strings"]:
+                    s.pop("glyph", None)
+                info["tokens"] = []
+                info["rendered"] = (comps, arcs)
+                rinfos.append(info)
+                systems.append(info)
+                continue
             toks = []
             for si, s in enumerate(info["strings"]):
                 for a, b in s["segs"]:
@@ -265,6 +290,21 @@ def read_pages(pages, log=None):
                 if not VALID.fullmatch(t["text"] or "") or not re.search(r"\d|x", t["text"]):
                     t2, c2 = run_tesseract([t["img"]], psm=8)
                     t["text"], t["conf"] = t2[0], c2[0]
+            # words in the tab strip ("slide", "let ring") are not notes: a letters-allowed reading finds them
+            if toks:
+                wtxt, _ = run_tesseract([t["img"] for t in toks], wl="abcdefgijklmnoqrstuvwyz0123456789hpbx/\~-")
+                for t, w in zip(toks, wtxt):
+                    w = re.sub(r"[^a-z0-9]", "", w or "")
+                    if len(re.findall(r"[acdefgijklmnoqrstuvwyz]", w)) >= 4 and                             len(re.findall(r"[acdefgijklmnoqrstuvwyz]", w)) >= 0.7 * len(w):
+                        t["comps"] = []; t["text"] = ""; t["word"] = True
+            toks = [t for t in toks if not t.get("word")]
+            if ASCII_NEW:       # second reading: glyph clusters (used if the font allows it, see below)
+                firsts = [sg["segs"][0][0] for sg in info["strings"] if sg["segs"]]
+                minx = (min(firsts) - 2) if firsts else None
+                comps, arcs = rendered.staff_components(gray, staff, p["pol"], info["ys"], info["bars"],
+                                                        ascii_mode=True, minx=minx)
+                info["rendered"] = (rendered.split_wide(comps, 0), arcs)
+                rinfos.append(info)
             info.pop("ink", None)
             for s in info["strings"]:
                 s.pop("glyph", None)
@@ -272,9 +312,41 @@ def read_pages(pages, log=None):
             systems.append(info)
         allsys.append(systems)
         if log:
-            log(f"  page {pi}: " + ", ".join(f"{len(s['tokens'])} tokens/{len(s['bars'])} bars" for s in systems))
-    _self_consistency(allsys, log)
-    return [[_notes_of(info) for info in systems] for systems in allsys]
+            log(f"  page {pi}: " + ", ".join(
+                f"{len(s['tokens'])} tokens/{len(s['bars'])} bars" if s["ascii"] else
+                f"{len(s['rendered'][0])} glyphs/{len(s['bars'])} bars" for s in systems))
+    import sys as _sys
+    for is_ascii in (False, True):
+        group = [i for i in rinfos if i["ascii"] == is_ascii]
+        if not group:
+            continue
+        flat = [c for info in group for c in info["rendered"][0] if c["kind"] == "glyph"]
+        labels, confs, groups = rendered.classify_comps(flat, _sys.modules[__name__], log=log, ascii_mode=is_ascii)
+        if debug and flat:
+            rendered.montage(flat, labels, groups, os.path.join(debug, "glyphs.png"))
+        if is_ascii and (len(flat) < 20 or len(groups) > 0.3 * len(flat) or float(np.mean(confs)) < 0.9):
+            # glyphs do not repeat cleanly (dashes touching digits, odd font): keep the Tesseract token reading
+            if log:
+                log(f"  ascii: {len(groups)} glyph clusters for {len(flat)} characters - using the Tesseract reading")
+            for info in group:
+                del info["rendered"]
+            continue
+        lab = {id(c): (l, cf) for c, l, cf in zip(flat, labels, confs)}
+        for info in group:
+            comps, arcs = info["rendered"]
+            ls = [lab[id(c)][0] if c["kind"] == "glyph" else c["ch"] for c in comps]
+            cs = [lab[id(c)][1] if c["kind"] == "glyph" else 1.0 for c in comps]
+            if info["ascii"]:
+                info["rnotes"] = rendered.assemble_ascii(info, comps, ls, cs, parse_token)
+            else:
+                info["rnotes"] = rendered.assemble(info, comps, ls, cs, arcs)
+            del info["rendered"]
+        if not is_ascii:
+            rendered.fuse_same_pages(group)
+    asc = [[s for s in sy if s["ascii"] and "rnotes" not in s] for sy in allsys]
+    if any(asc):
+        _self_consistency(asc, log)
+    return [[info["rnotes"] if "rnotes" in info else _notes_of(info) for info in systems] for systems in allsys]
 
 
 VALID = re.compile(r"[0-9()hpbr/\\~x]+")
@@ -290,7 +362,10 @@ def _self_consistency(allsys, log=None):
                 t["text"] = txt
                 ok = len(txt) == len(t["comps"])
                 for ci, c in enumerate(t["comps"]):
-                    feats.append(c[2]); tl.append(txt[ci] if ok else None); where.append((t, ci))
+                    ch = txt[ci] if ok else None
+                    if ch == "~" and c[3] >= 0.28:        # a squiggle is small: a tall "~" is a failed reading
+                        ch = None
+                    feats.append(c[2]); tl.append(ch); where.append((t, ci))
     labels = glyphs.classify(feats, tl, log)
     per = {}
     for (t, ci), l in zip(where, labels):
