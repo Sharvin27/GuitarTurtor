@@ -567,3 +567,27 @@ test('create trims a take with leading silence, keeps note times on the video cl
   assert.equal(await h.blobs.get(again.id).text(), 'upload');
   assert.equal(h.blobs.has(song.id), false);
 });
+
+// ---------- create: sound + fretting-hand video fusion (js/handvision.js) ----------
+test('hand video picks the string/fret nearest the fingertips; pitch is kept; no hand = plain Viterbi', async () => {
+  const { visionCosts, findH, applyH, homographyFromCalibration, fretX, stringY } = await import('../js/handvision.js');
+  // D#4 (63) three times: audio-only Viterbi plays it low (B string 4); fingertips at fret ~8 on the G string ask for (2, 8)
+  const raw = [0, 1, 2].map(i => ({ t: .5 + i, e: .9 + i, p: 63, a: 1 }));
+  const plain = toScore(raw);
+  assert.ok(!plain.source && plain.notes.every(n => n.conf === undefined));
+  const track = { frames: [] };
+  for (let t = 0; t < 3; t += 1 / 12) track.frames.push({ t, tips: t < 2 ? [[2.1, 7.6], [1.2, 9.4]] : null });
+  const fused = toScore(raw, 0, .75, null, { vision: visionCosts(track) });
+  assert.equal(fused.source, 'audio+video');
+  assert.deepEqual(plain.notes.map(n => n.n), [[[1, 4]], [[1, 4]], [[1, 4]]]);
+  assert.deepEqual(fused.notes.slice(0, 2).map(n => n.n), [[[2, 8]], [[2, 8]]]);
+  assert.ok(fused.notes[0].conf > .5 && fused.notes.every(n => n.conf >= 0 && n.conf <= 1));
+  assert.ok(fused.notes.every((n, i) => openMidi[n.n[0][0]] + n.n[0][1] === 63), 'pitch unchanged');
+  // geometry: calibration homography maps the clicked corners back
+  const pts = [[100, 50], [110, 150], [400, 170], [390, 60]], H = homographyFromCalibration(pts, [0, 12]);
+  const [x, y] = applyH(H, fretX(12), stringY(5, fretX(12)));
+  assert.ok(Math.hypot(x - 400, y - 170) < 1e-6);
+  const src = [[0, 0], [1, 0], [1, 1], [0, 1], [.5, .5], [.2, .7]], dst = src.map(([a, b]) => applyH(H, a, b));
+  dst.push([999, 999]); src.push([.3, .3]);
+  assert.equal(findH(src, dst, 1).inl.filter(Boolean).length, 6);
+});

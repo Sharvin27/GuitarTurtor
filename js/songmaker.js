@@ -235,16 +235,19 @@ function skyline(raw, high = 0.75, lib = null) {
 // String/fret by beam-search Viterbi following the hand (port of pitch-model/transcribe.py: assign/trans_cost):
 // changing string costs 1 (+0.25 per string), moving the hand 0.08/fret (+0.3 beyond 4 frets), open strings keep the
 // hand where it was, and a string just played open is not fretted next (drone idiom).
-function fingering(events, beam = 64) {
+// vis (optional, from the hand video): per event, an extra cost per candidate = distance in frets from the fretting
+// fingertips (js/handvision.js visionCosts), or null where the hand is not visible (plain Viterbi there).
+const candidates = p => OPEN.map((o, s) => [s, p - o]).filter(([, f]) => f >= 0 && f <= MAX_FRET);
+function fingering(events, beam = 64, vis = null, w = 1) {
   let beams = [{ c: 0, path: [], anc: null }];
   for (const e of events) {
-    const cands = OPEN.map((o, s) => [s, e.p - o]).filter(([, f]) => f >= 0 && f <= MAX_FRET);
+    const cands = candidates(e.p), vc = vis ? e.vc : null;
     const next = new Map();
     for (const b of beams) {
       const recentOpen = new Set(b.path.slice(-2).filter(([, f]) => f === 0).map(([s]) => s));
-      for (const pos of cands) {
+      for (const [ci, pos] of cands.entries()) {
         const [s, f] = pos;
-        let c = b.c + 0.01 * f;
+        let c = b.c + 0.01 * f + (vc ? w * vc[ci] : 0);
         if (f > 0 && b.anc) {
           const [sa, fa] = b.anc;
           if (sa !== s) c += 1 + 0.25 * Math.abs(sa - s);
@@ -286,10 +289,22 @@ function beatGrid(times, end) {
 
 // raw notes [{t,e,p,a}] (seconds into the audio) -> {bpm, grid, notes:[{t,q,d,n:[[string,fret]],sec}]}.
 // offset = video time at the audio's start, so note times are video times.
-export function toScore(raw, offset = 0, high = 0.75, lib = null) {
+// vision (optional): (t, candidates) -> cost per candidate | null, t on the raw (audio) clock. Then the pitch still decides
+// the note, the fingertips pick among the positions that give it, every note gets conf (0-1, how sure the string/fret
+// choice is) and the score is marked source: 'audio+video'.
+export function toScore(raw, offset = 0, high = 0.75, lib = null, { vision = null, visionWeight = 0.5 } = {}) {
   const ev = skyline(raw, high, lib).map(e => ({ ...e, t: e.t + offset })).filter(e => e.t >= 0);
   if (!ev.length) throw new Error('No notes were found in this audio.');
-  const pos = fingering(ev);
+  if (vision) for (const e of ev) if (!e.chord) e.vc = vision(e.t - offset, candidates(e.p));
+  const pos = fingering(ev, 64, vision, visionWeight);
+  const conf = (e, p) => {
+    if (e.chord) return 0.5;
+    const cs = candidates(e.p);
+    if (cs.length < 2) return 1;
+    if (!e.vc) return 0.4;                                   // position guessed from the hand path only
+    const k = cs.findIndex(([s, f]) => s === p[0] && f === p[1]), z = e.vc.map(v => Math.exp(-2 * v)), sum = z.reduce((a, b) => a + b, 0);
+    return k < 0 || !sum ? 0.4 : +(z[k] / sum).toFixed(2);
+  };
   const end = ev[ev.length - 1].t;
   const { period, grid } = beatGrid(ev.map(e => e.t), end);
   let prevQ = -1;
@@ -298,11 +313,11 @@ export function toScore(raw, offset = 0, high = 0.75, lib = null) {
     if (q <= prevQ) q = prevQ + 0.25;
     prevQ = q;
     return { t: +e.t.toFixed(3), q, n: e.chord || [pos[i].slice()],
-      ...(e.chord ? { sustain: +e.sustain.toFixed(3) } : {}) };
+      ...(e.chord ? { sustain: +e.sustain.toFixed(3) } : {}), ...(vision ? { conf: conf(e, pos[i]) } : {}) };
   });
   notes.forEach((n, i) => {
     n.d = i + 1 < notes.length ? Math.max(1, Math.min(16, Math.round((notes[i + 1].q - n.q) * 4))) : 4;
     n.sec = 'Part ' + (Math.floor(n.q / 16) + 1);
   });
-  return { bpm: Math.round(600 / period) / 10, grid, notes };
+  return { bpm: Math.round(600 / period) / 10, grid, notes, ...(vision ? { source: 'audio+video' } : {}) };
 }
