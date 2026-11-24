@@ -293,7 +293,7 @@ def classify_comps(comps, ocr_mod, log=None, sim=0.93, ntess=3, ascii_mode=False
     """Label each component; returns (labels, conf) with conf in 0..1 from the cluster's evidence margin."""
     n = len(comps)
     if not n:
-        return [], []
+        return [], [], []   # (labels, conf, groups): was 2 values -> ValueError in ocr.read_pages
     feats = [glyphs.feature(c["mask"]) for c in comps]
     X = np.stack(feats).astype(np.float32)
     # a glyph's size class must match too: a "1" and a tiny mark can look alike after normalisation
