@@ -204,11 +204,11 @@
   },
   "ours_up_strokes_strings": [
    [
-    4,
+    3,
     8
    ]
   ],
-  "ours_up_strokes_touch_bass_strings_pct": 100.0
+  "ours_up_strokes_touch_bass_strings_pct": 0.0
  },
  "execution_3d": {
   "pick_moves_in_stroke_direction_pct": 100.0,
